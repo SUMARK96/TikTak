@@ -15,7 +15,12 @@ import {
   Palette,
   DoorClosed,
   Globe,
-  Clock
+  Clock,
+  CreditCard,
+  Building,
+  Smartphone,
+  CheckCircle2,
+  ShieldCheck
 } from 'lucide-react';
 import { EventItem, TicketTier, TicketDesignTheme } from '../types';
 import { dbService, getCurrentOrganizerSession } from '../lib/database';
@@ -71,8 +76,35 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiSuggestionsGenerated, setAiSuggestionsGenerated] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'info' | 'design' | 'tickets'>('info');
+  // Active Wizard Tab
+  const [activeTab, setActiveTab] = useState<'info' | 'design' | 'tickets' | 'payments'>('info');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Payment Methods per Event State
+  const [eventPaymentMethods, setEventPaymentMethods] = useState<{
+    stripe: { enabled: boolean; publishable_key: string };
+    bankak: { enabled: boolean; account_number: string; account_name: string; instructions: string };
+    vodafone_cash: { enabled: boolean; wallet_number: string; instructions: string };
+  }>(() => {
+    const orgPayments = currentOrganizer?.payment_methods;
+    return {
+      stripe: {
+        enabled: orgPayments?.stripe?.enabled ?? true,
+        publishable_key: orgPayments?.stripe?.publishable_key || 'pk_live_stripe_sample_key',
+      },
+      bankak: {
+        enabled: orgPayments?.bankak?.enabled ?? true,
+        account_number: orgPayments?.bankak?.account_number || '2840195',
+        account_name: orgPayments?.bankak?.account_name || currentOrganizer?.organization_name || 'حساب المنظم',
+        instructions: orgPayments?.bankak?.instructions || 'يرجى إرفاق إشعار التحويل من تطبيق بنكك بعد إتمام العملية.',
+      },
+      vodafone_cash: {
+        enabled: orgPayments?.vodafone_cash?.enabled ?? true,
+        wallet_number: orgPayments?.vodafone_cash?.wallet_number || currentOrganizer?.phone || '01012345678',
+        instructions: orgPayments?.vodafone_cash?.instructions || 'تحويل مباشر إلى رقم محفظة فودافون كاش',
+      },
+    };
+  });
 
   // Ticket tiers state with gate assignment
   const [tiers, setTiers] = useState<Array<Omit<TicketTier, 'id' | 'event_id' | 'sold_count'> & { hasCustomGate?: boolean }>>([
@@ -175,6 +207,18 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     e.preventDefault();
     if (!title || !venueName) return;
 
+    // Check if at least one payment method is enabled
+    const hasAnyPayment =
+      eventPaymentMethods.stripe.enabled ||
+      eventPaymentMethods.bankak.enabled ||
+      eventPaymentMethods.vodafone_cash.enabled;
+
+    if (!hasAnyPayment) {
+      alert('يرجى تفعيل وسيلة دفع واحدة على الأقل في تبويب (طرق الدفع والتحصيل) لتتمكن من بيع التذاكر للجمهور.');
+      setActiveTab('payments');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const totalCap = tiers.reduce((acc, t) => acc + Number(t.capacity), 0);
@@ -216,7 +260,37 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
         total_capacity: totalCap,
         status: 'published',
         ticket_tiers: cleanedTiers,
+        payment_methods: {
+          stripe: eventPaymentMethods.stripe.enabled,
+          bankak: eventPaymentMethods.bankak.enabled,
+          vodafone_cash: eventPaymentMethods.vodafone_cash.enabled,
+        },
       });
+
+      // Synchronize organizer profile payment methods
+      if (currentOrganizer?.id) {
+        dbService
+          .updateOrganizerPaymentMethods(currentOrganizer.id, {
+            stripe: {
+              enabled: eventPaymentMethods.stripe.enabled,
+              publishable_key: eventPaymentMethods.stripe.publishable_key,
+              currency: 'SAR',
+            },
+            bankak: {
+              enabled: eventPaymentMethods.bankak.enabled,
+              account_number: eventPaymentMethods.bankak.account_number,
+              account_name: eventPaymentMethods.bankak.account_name,
+              instructions: eventPaymentMethods.bankak.instructions,
+            },
+            vodafone_cash: {
+              enabled: eventPaymentMethods.vodafone_cash.enabled,
+              wallet_number: eventPaymentMethods.vodafone_cash.wallet_number,
+              wallet_name: currentOrganizer.organization_name || organizerName,
+              instructions: eventPaymentMethods.vodafone_cash.instructions,
+            },
+          })
+          .catch((e) => console.warn('Sync organizer payment details warning:', e));
+      }
 
       onEventCreated(created);
       onClose();
@@ -280,42 +354,55 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
         </div>
 
         {/* Wizard Steps Tabs */}
-        <div className="flex bg-slate-950 p-1 rounded-2xl my-4 border border-slate-800 text-xs font-bold">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-slate-950 p-1.5 rounded-2xl my-4 border border-slate-800 text-xs font-bold">
           <button
             type="button"
             onClick={() => setActiveTab('info')}
-            className={`flex-1 py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 ${
+            className={`py-2 px-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
               activeTab === 'info'
                 ? 'bg-indigo-600 text-white shadow'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <span>1. تفاصيل ومكان الفعالية</span>
+            <span>1. تفاصيل الفعالية</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('design')}
-            className={`flex-1 py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 ${
+            className={`py-2 px-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
               activeTab === 'design'
                 ? 'bg-indigo-600 text-white shadow'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Palette className="w-3.5 h-3.5 text-amber-400" />
-            <span>2. مظهر وتصميم التذكرة {enableAiDesign && '(AI)'}</span>
+            <span>2. مظهر التذكرة</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('tickets')}
-            className={`flex-1 py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 ${
+            className={`py-2 px-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
               activeTab === 'tickets'
                 ? 'bg-indigo-600 text-white shadow'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <span>3. فئات التذاكر وبوابات الدخول</span>
+            <span>3. فئات التذاكر</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('payments')}
+            className={`py-2 px-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
+              activeTab === 'payments'
+                ? 'bg-emerald-600 text-white shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
+            <span>4. طرق الدفع المتاحة</span>
           </button>
         </div>
 
@@ -835,23 +922,359 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 ))}
               </div>
 
-              {/* Submit Action */}
+              {/* Navigation to Payments Tab */}
               <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
                 <button
                   type="button"
                   onClick={() => setActiveTab('design')}
-                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
                 >
                   ← السابق: مظهر التذكرة
                 </button>
 
                 <button
+                  type="button"
+                  onClick={() => setActiveTab('payments')}
+                  className="py-3 px-5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 font-bold text-xs text-white shadow-lg shadow-indigo-600/30 transition active:scale-[0.98] flex items-center gap-1.5"
+                >
+                  <span>التالي: تحديد طرق الدفع والتحصيل</span>
+                  <CreditCard className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ======================= TAB 4: PAYMENT METHODS FOR THIS EVENT ======================= */}
+          {activeTab === 'payments' && (
+            <div className="space-y-4 animate-fadeIn">
+              <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/80 space-y-2">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                  <h3 className="text-sm font-bold text-white">
+                    تحديد طرق الدفع المباشر الخاصة بهذه الفعالية
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  اختر من حساباتك وبواباتك المربوطة أي الطرق تريد إتاحتها للمشترين لحجز تذاكر هذه الفعالية. الطرق المفعلة فقط هي التي ستظهر للجمهور عند الحجز.
+                </p>
+              </div>
+
+              {/* Payment Methods Selection Cards */}
+              <div className="space-y-3">
+                {/* 1. Stripe Card */}
+                <div
+                  className={`p-4 rounded-2xl border transition ${
+                    eventPaymentMethods.stripe.enabled
+                      ? 'bg-indigo-600/10 border-indigo-500/60 shadow-lg shadow-indigo-500/5'
+                      : 'bg-slate-800/40 border-slate-700/60 opacity-60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-black text-sm border border-indigo-500/30">
+                        S
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white text-sm">بوابة Stripe (بطاقات فيزا / ماستركارد / Apple Pay)</span>
+                          {eventPaymentMethods.stripe.enabled ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                              مفعلة وتظهر للجمهور ✅
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400 font-bold">
+                              معطلة لهذه الفعالية ✕
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          دفع فوري بالبطاقات الدولية والمحلية لحساب المنظم
+                        </p>
+                      </div>
+                    </div>
+
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={eventPaymentMethods.stripe.enabled}
+                        onChange={(e) =>
+                          setEventPaymentMethods({
+                            ...eventPaymentMethods,
+                            stripe: { ...eventPaymentMethods.stripe, enabled: e.target.checked },
+                          })
+                        }
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </label>
+                  </div>
+
+                  {eventPaymentMethods.stripe.enabled && (
+                    <div className="mt-3 pt-3 border-t border-slate-700/50">
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        المفتاح العام للمنظم (Publishable Key):
+                      </label>
+                      <input
+                        type="text"
+                        value={eventPaymentMethods.stripe.publishable_key}
+                        onChange={(e) =>
+                          setEventPaymentMethods({
+                            ...eventPaymentMethods,
+                            stripe: { ...eventPaymentMethods.stripe, publishable_key: e.target.value },
+                          })
+                        }
+                        placeholder="pk_live_..."
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono text-left"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Bankak Sudan Card */}
+                <div
+                  className={`p-4 rounded-2xl border transition ${
+                    eventPaymentMethods.bankak.enabled
+                      ? 'bg-emerald-600/10 border-emerald-500/60 shadow-lg shadow-emerald-500/5'
+                      : 'bg-slate-800/40 border-slate-700/60 opacity-60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-emerald-600/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30">
+                        <Building className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white text-sm">تطبيق بنكك (بنك الخرطوم - السودان 🇸🇩)</span>
+                          {eventPaymentMethods.bankak.enabled ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                              مفعلة وتظهر للجمهور ✅
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400 font-bold">
+                              معطلة لهذه الفعالية ✕
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          تحويل مباشر لحساب بنكك الخاص بالمنظم مع إرفاق رقم أو إشعار التحويل
+                        </p>
+                      </div>
+                    </div>
+
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={eventPaymentMethods.bankak.enabled}
+                        onChange={(e) =>
+                          setEventPaymentMethods({
+                            ...eventPaymentMethods,
+                            bankak: { ...eventPaymentMethods.bankak, enabled: e.target.checked },
+                          })
+                        }
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </label>
+                  </div>
+
+                  {eventPaymentMethods.bankak.enabled && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-700/50">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          رقم حساب بنكك (Account Number):
+                        </label>
+                        <input
+                          type="text"
+                          value={eventPaymentMethods.bankak.account_number}
+                          onChange={(e) =>
+                            setEventPaymentMethods({
+                              ...eventPaymentMethods,
+                              bankak: { ...eventPaymentMethods.bankak, account_number: e.target.value },
+                            })
+                          }
+                          placeholder="مثال: 2840195"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono text-left"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          اسم صاحب الحساب بالكامل:
+                        </label>
+                        <input
+                          type="text"
+                          value={eventPaymentMethods.bankak.account_name}
+                          onChange={(e) =>
+                            setEventPaymentMethods({
+                              ...eventPaymentMethods,
+                              bankak: { ...eventPaymentMethods.bankak, account_name: e.target.value },
+                            })
+                          }
+                          placeholder="الاسم المسجل في بنك الخرطوم"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          تعليمات التحويل للمشتري:
+                        </label>
+                        <input
+                          type="text"
+                          value={eventPaymentMethods.bankak.instructions}
+                          onChange={(e) =>
+                            setEventPaymentMethods({
+                              ...eventPaymentMethods,
+                              bankak: { ...eventPaymentMethods.bankak, instructions: e.target.value },
+                            })
+                          }
+                          placeholder="يرجى إرفاق إشعار التحويل من تطبيق بنكك بعد إتمام العملية."
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Vodafone Cash Card */}
+                <div
+                  className={`p-4 rounded-2xl border transition ${
+                    eventPaymentMethods.vodafone_cash.enabled
+                      ? 'bg-red-600/10 border-red-500/60 shadow-lg shadow-red-500/5'
+                      : 'bg-slate-800/40 border-slate-700/60 opacity-60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-red-600/20 text-red-400 flex items-center justify-center border border-red-500/30">
+                        <Smartphone className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white text-sm">محفظة فودافون كاش (Vodafone Cash - مصر 🇪🇬)</span>
+                          {eventPaymentMethods.vodafone_cash.enabled ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                              مفعلة وتظهر للجمهور ✅
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400 font-bold">
+                              معطلة لهذه الفعالية ✕
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          تحويل مباشر إلى رقم محفظة فودافون كاش الخاصة بالمنظم
+                        </p>
+                      </div>
+                    </div>
+
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={eventPaymentMethods.vodafone_cash.enabled}
+                        onChange={(e) =>
+                          setEventPaymentMethods({
+                            ...eventPaymentMethods,
+                            vodafone_cash: { ...eventPaymentMethods.vodafone_cash, enabled: e.target.checked },
+                          })
+                        }
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </label>
+                  </div>
+
+                  {eventPaymentMethods.vodafone_cash.enabled && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-700/50">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          رقم محفظة فودافون كاش:
+                        </label>
+                        <input
+                          type="text"
+                          value={eventPaymentMethods.vodafone_cash.wallet_number}
+                          onChange={(e) =>
+                            setEventPaymentMethods({
+                              ...eventPaymentMethods,
+                              vodafone_cash: { ...eventPaymentMethods.vodafone_cash, wallet_number: e.target.value },
+                            })
+                          }
+                          placeholder="مثال: 01012345678"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono text-left"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                          تعليمات التحويل للعميل:
+                        </label>
+                        <input
+                          type="text"
+                          value={eventPaymentMethods.vodafone_cash.instructions}
+                          onChange={(e) =>
+                            setEventPaymentMethods({
+                              ...eventPaymentMethods,
+                              vodafone_cash: { ...eventPaymentMethods.vodafone_cash, instructions: e.target.value },
+                            })
+                          }
+                          placeholder="تحويل مباشر عبر كود *9*7*الرقم*المبلغ#"
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Summary of Active Methods */}
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                <span className="text-slate-400">الوسائل التي ستظهر للمشتري:</span>
+                <div className="flex items-center gap-1.5 font-bold">
+                  {eventPaymentMethods.stripe.enabled && (
+                    <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      Stripe
+                    </span>
+                  )}
+                  {eventPaymentMethods.bankak.enabled && (
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      بنكك 🇸🇩
+                    </span>
+                  )}
+                  {eventPaymentMethods.vodafone_cash.enabled && (
+                    <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30">
+                      فودافون كاش 🇪🇬
+                    </span>
+                  )}
+                  {!eventPaymentMethods.stripe.enabled &&
+                    !eventPaymentMethods.bankak.enabled &&
+                    !eventPaymentMethods.vodafone_cash.enabled && (
+                      <span className="text-rose-400">لم يتم اختيار أي وسيلة دفع!</span>
+                    )}
+                </div>
+              </div>
+
+              {/* Final Submit Actions */}
+              <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('tickets')}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+                >
+                  ← السابق: فئات التذاكر
+                </button>
+
+                <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="py-3.5 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 font-bold text-sm text-white shadow-xl shadow-indigo-600/30 transition active:scale-[0.98] disabled:opacity-50 flex items-center gap-2"
+                  className="py-3.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 font-bold text-sm text-white shadow-xl shadow-indigo-600/30 transition active:scale-[0.98] disabled:opacity-50 flex items-center gap-2"
                 >
                   <Sparkles className="w-4 h-4" />
-                  <span>{isSubmitting ? 'جاري نشر وتدشين الفعالية...' : `نشر وتدشين الفعالية الآن (${countryConfig.currency}) 🚀`}</span>
+                  <span>
+                    {isSubmitting
+                      ? 'جاري نشر وتدشين الفعالية...'
+                      : `نشر وتدشين الفعالية الآن (${countryConfig.currency}) 🚀`}
+                  </span>
                 </button>
               </div>
             </div>

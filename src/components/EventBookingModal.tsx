@@ -52,20 +52,22 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
 
   useEffect(() => {
     if (event) {
-      if (event.ticket_tiers.length > 0) {
+      if (event.ticket_tiers && event.ticket_tiers.length > 0) {
         setSelectedTier(event.ticket_tiers[0]);
       }
       dbService.getOrganizerById(event.organizer_id).then((org) => {
         setOrganizer(org);
-        // Default to first enabled payment method
-        if (org?.payment_methods) {
-          if (org.payment_methods.stripe?.enabled) {
-            setPaymentMethod('stripe');
-          } else if (org.payment_methods.bankak?.enabled) {
-            setPaymentMethod('bankak');
-          } else if (org.payment_methods.vodafone_cash?.enabled) {
-            setPaymentMethod('vodafone_cash');
-          }
+        const raw = org?.payment_methods as any;
+        const stripeOn = (event?.payment_methods ? event.payment_methods.stripe : raw?.stripe?.enabled) ?? true;
+        const bankakOn = (event?.payment_methods ? event.payment_methods.bankak : raw?.bankak?.enabled) ?? true;
+        const vodafoneOn = (event?.payment_methods ? event.payment_methods.vodafone_cash : raw?.vodafone_cash?.enabled) ?? true;
+
+        if (stripeOn) {
+          setPaymentMethod('stripe');
+        } else if (bankakOn) {
+          setPaymentMethod('bankak');
+        } else if (vodafoneOn) {
+          setPaymentMethod('vodafone_cash');
         }
       });
     }
@@ -73,7 +75,7 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
 
   if (!isOpen || !event) return null;
 
-  const currentTier = selectedTier || event.ticket_tiers[0];
+  const currentTier = selectedTier || (event.ticket_tiers && event.ticket_tiers[0]);
   const totalPrice = currentTier ? currentTier.price * quantity : 0;
 
   const handleProceedToBuyer = () => {
@@ -175,22 +177,28 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
   };
 
   const orgRaw = (organizer?.payment_methods as any) || {};
+  
+  // Specific event payment method choice takes priority over organizer default
+  const isStripeEnabled = (event?.payment_methods ? event.payment_methods.stripe : orgRaw.stripe?.enabled) ?? true;
+  const isBankakEnabled = (event?.payment_methods ? event.payment_methods.bankak : orgRaw.bankak?.enabled) ?? true;
+  const isVodafoneEnabled = (event?.payment_methods ? event.payment_methods.vodafone_cash : orgRaw.vodafone_cash?.enabled) ?? true;
+
   const orgPayments: OrganizerPaymentMethods = {
     stripe: {
-      enabled: orgRaw.stripe?.enabled ?? true,
+      enabled: isStripeEnabled,
       publishable_key: orgRaw.stripe?.publishable_key || 'pk_live_organizer_key',
       account_id: orgRaw.stripe?.account_id || '',
       currency: orgRaw.stripe?.currency || 'SAR',
     },
     bankak: {
-      enabled: orgRaw.bankak?.enabled ?? true,
-      account_number: orgRaw.bankak?.account_number || '2849102',
+      enabled: isBankakEnabled,
+      account_number: orgRaw.bankak?.account_number || '2840195',
       account_name: orgRaw.bankak?.account_name || organizer?.organization_name || organizer?.name || 'حساب المنظم',
       phone_number: orgRaw.bankak?.phone_number || organizer?.phone || '+249912345678',
       instructions: orgRaw.bankak?.instructions || 'يرجى إرفاق إشعار التحويل من تطبيق بنكك بعد إتمام العملية.',
     },
     vodafone_cash: {
-      enabled: orgRaw.vodafone_cash?.enabled ?? true,
+      enabled: isVodafoneEnabled,
       wallet_number: orgRaw.vodafone_cash?.wallet_number || organizer?.phone || '01012345678',
       wallet_name: orgRaw.vodafone_cash?.wallet_name || organizer?.organization_name || organizer?.name || 'محفظة المنظم',
       instructions: orgRaw.vodafone_cash?.instructions || 'قم بالتحويل عبر كود فودافون كاش *9*7*رقم المحفظة*المبلغ# وأرسل التأكيد.',
@@ -410,7 +418,7 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
                   type="button"
                   onClick={() => setPaymentMethod('stripe')}
                   className={`flex-1 min-w-[110px] p-3 rounded-2xl border text-xs font-bold flex flex-col items-center gap-1.5 transition ${
-                    paymentMethod === 'stripe'
+                    (paymentMethod === 'stripe' || (!orgPayments.bankak?.enabled && !orgPayments.vodafone_cash?.enabled))
                       ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-lg'
                       : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
                   }`}
@@ -453,8 +461,15 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
               )}
             </div>
 
+            {!orgPayments.stripe?.enabled && !orgPayments.bankak?.enabled && !orgPayments.vodafone_cash?.enabled && (
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs text-center space-y-1">
+                <p className="font-bold">يرجى التواصل مع المنظم لإتمام الحجز</p>
+                <p className="text-[11px] text-amber-400/80">لم يقم المنظم بتفعيل أي وسيلة دفع لهذه الفعالية حالياً.</p>
+              </div>
+            )}
+
             {/* 1. Stripe Card Checkout Box */}
-            {paymentMethod === 'stripe' && (
+            {paymentMethod === 'stripe' && orgPayments.stripe?.enabled && (
               <div className="p-4 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-3 text-xs">
                 <div className="font-bold text-slate-200 flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -494,7 +509,7 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
             )}
 
             {/* 2. Bankak Sudan (Bank of Khartoum) Details Box */}
-            {paymentMethod === 'bankak' && (
+            {paymentMethod === 'bankak' && orgPayments.bankak?.enabled && (
               <div className="p-4 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-3 text-xs">
                 <div className="font-bold text-slate-200 flex items-center justify-between">
                   <span>تفاصيل حساب تطبيق بنكك (بنك الخرطوم):</span>
@@ -514,12 +529,12 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
                     <span className="text-slate-500 text-[10px]">رقم الحساب:</span>
                     <div className="flex items-center gap-1.5">
                       <span className="text-emerald-400 font-bold text-sm tracking-wider">
-                        {orgPayments?.bankak?.account_number || '2849102'}
+                        {orgPayments?.bankak?.account_number || '2840195'}
                       </span>
                       <button
                         type="button"
                         onClick={() =>
-                          copyText(orgPayments?.bankak?.account_number || '2849102', 'bankak')
+                          copyText(orgPayments?.bankak?.account_number || '2840195', 'bankak')
                         }
                         className="p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
                         title="نسخ رقم الحساب"
@@ -558,7 +573,7 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
             )}
 
             {/* 3. Vodafone Cash (Egypt) Details Box */}
-            {paymentMethod === 'vodafone_cash' && (
+            {paymentMethod === 'vodafone_cash' && orgPayments.vodafone_cash?.enabled && (
               <div className="p-4 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-3 text-xs">
                 <div className="font-bold text-slate-200 flex items-center justify-between">
                   <span>تفاصيل التحويل عبر فودافون كاش:</span>

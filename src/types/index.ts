@@ -75,6 +75,11 @@ export interface EventItem {
   featured?: boolean;
   sales_start_date?: string;
   sales_end_date?: string;
+  payment_methods?: {
+    stripe?: boolean;
+    bankak?: boolean;
+    vodafone_cash?: boolean;
+  };
 }
 
 export interface Ticket {
