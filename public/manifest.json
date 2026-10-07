@@ -1,0 +1,24 @@
+{
+  "name": "تيك تاك | TikTak لحجز وتدقيق التذاكر",
+  "short_name": "TikTak",
+  "description": "منصة بيع ومسح تذاكر الفعاليات الذكية",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#090d16",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
