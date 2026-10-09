@@ -30,7 +30,15 @@ import {
   UserPlus,
   KeyRound,
   DoorClosed,
-  Copy
+  Copy,
+  Cloud,
+  UploadCloud,
+  DownloadCloud,
+  FileJson,
+  Server,
+  Activity,
+  Database,
+  RefreshCw
 } from 'lucide-react';
 import { EventItem, GateStaff, Organizer, OrganizerPaymentMethods, Ticket } from '../types';
 import { dbService, PLATFORM_FEE_PERCENTAGE } from '../lib/database';
@@ -79,7 +87,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
   onViewTicket,
   onBrowseAsCustomer,
 }) => {
-  const [activeTab, setActiveTab] = useState<'events' | 'payments' | 'attendees' | 'staff' | 'scanner'>('events');
+  const [activeTab, setActiveTab] = useState<'events' | 'payments' | 'attendees' | 'staff' | 'scanner' | 'sync'>('events');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'checked_in' | 'valid'>('all');
   const [organizerTickets, setOrganizerTickets] = useState<Ticket[]>([]);
@@ -95,6 +103,191 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
   const [newStaffEventId, setNewStaffEventId] = useState('all');
   const [newStaffPin, setNewStaffPin] = useState(() => Math.floor(1000 + Math.random() * 9000).toString());
   const [copiedStaffId, setCopiedStaffId] = useState<string | null>(null);
+
+  // Cloud Sync & Backup State
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migrationStatus, setMigrationStatus] = useState<{
+    success?: boolean;
+    message?: string;
+    details?: { events: number; tiers: number; staff: number; tickets: number };
+  } | null>(null);
+  const [healthStatus, setHealthStatus] = useState<{
+    loading: boolean;
+    hasEnv?: boolean;
+    dbConnected?: boolean;
+    eventsCount?: number;
+    error?: string | null;
+  }>({ loading: false });
+
+  // Function to check /api/health
+  const checkHealth = async () => {
+    setHealthStatus((prev) => ({ ...prev, loading: true }));
+    try {
+      const res = await fetch('/api/health');
+      if (res.ok) {
+        const data = await res.json();
+        setHealthStatus({
+          loading: false,
+          hasEnv: data.has_env_vars,
+          dbConnected: data.db_connected,
+          eventsCount: data.events_count,
+          error: data.error,
+        });
+      } else {
+        setHealthStatus({
+          loading: false,
+          dbConnected: false,
+          error: `HTTP ${res.status}: ${res.statusText}`,
+        });
+      }
+    } catch (err: any) {
+      setHealthStatus({
+        loading: false,
+        dbConnected: false,
+        error: err?.message || 'فشل الاتصال بنقطة /api/health',
+      });
+    }
+  };
+
+  // Function to export full JSON Backup from localStorage
+  const handleExportBackupJSON = () => {
+    const backupData = {
+      timestamp: new Date().toISOString(),
+      platform: 'TikTak Events',
+      version: '3.0',
+      events: (() => {
+        try {
+          return JSON.parse(
+            localStorage.getItem('tiktak_events_data_v3') ||
+            localStorage.getItem('tiktak_events_data_v2') ||
+            localStorage.getItem('tiktak_events_data') ||
+            '[]'
+          );
+        } catch { return []; }
+      })(),
+      organizers: (() => {
+        try {
+          return JSON.parse(
+            localStorage.getItem('tiktak_organizers_data_v3') ||
+            localStorage.getItem('tiktak_organizers_data_v2') ||
+            '[]'
+          );
+        } catch { return []; }
+      })(),
+      tickets: (() => {
+        try {
+          return JSON.parse(
+            localStorage.getItem('tiktak_tickets_data_v3') ||
+            localStorage.getItem('tiktak_tickets_data_v2') ||
+            '[]'
+          );
+        } catch { return []; }
+      })(),
+      orders: (() => {
+        try {
+          return JSON.parse(localStorage.getItem('tiktak_orders_data_v3') || '[]');
+        } catch { return []; }
+      })(),
+      gate_staff: (() => {
+        try {
+          return JSON.parse(localStorage.getItem('tiktak_gate_staff_v3') || '[]');
+        } catch { return []; }
+      })(),
+      scan_logs: (() => {
+        try {
+          return JSON.parse(localStorage.getItem('tiktak_scan_logs_v3') || '[]');
+        } catch { return []; }
+      })(),
+    };
+
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tiktak-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Function to migrate local data to Supabase
+  const handleMigrateLocalDataToCloud = async () => {
+    setIsMigrating(true);
+    setMigrationStatus(null);
+    try {
+      const backupData = {
+        events: (() => {
+          try {
+            return JSON.parse(
+              localStorage.getItem('tiktak_events_data_v3') ||
+              localStorage.getItem('tiktak_events_data_v2') ||
+              localStorage.getItem('tiktak_events_data') ||
+              '[]'
+            );
+          } catch { return []; }
+        })(),
+        organizers: (() => {
+          try {
+            return JSON.parse(
+              localStorage.getItem('tiktak_organizers_data_v3') ||
+              localStorage.getItem('tiktak_organizers_data_v2') ||
+              '[]'
+            );
+          } catch { return []; }
+        })(),
+        gate_staff: (() => {
+          try {
+            return JSON.parse(localStorage.getItem('tiktak_gate_staff_v3') || '[]');
+          } catch { return []; }
+        })(),
+        tickets: (() => {
+          try {
+            return JSON.parse(
+              localStorage.getItem('tiktak_tickets_data_v3') ||
+              localStorage.getItem('tiktak_tickets_data_v2') ||
+              '[]'
+            );
+          } catch { return []; }
+        })(),
+      };
+
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(backupData),
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        setMigrationStatus({
+          success: true,
+          message: 'تم ترحيل وحفظ جميع البيانات المحلية بنجاح في السحابة المركزية!',
+          details: {
+            events: result.synced_events ?? backupData.events.length,
+            tiers: result.synced_tiers ?? 0,
+            staff: backupData.gate_staff.length,
+            tickets: backupData.tickets.length,
+          },
+        });
+        // Also trigger events reload
+        await dbService.getEvents();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setMigrationStatus({
+          success: false,
+          message: err.error || 'حدث خطأ أثناء الاتصال بالخادم لترحيل البيانات',
+        });
+      }
+    } catch (e: any) {
+      setMigrationStatus({
+        success: false,
+        message: e?.message || 'تعذر ترحيل البيانات إلى السحابة',
+      });
+    } finally {
+      setIsMigrating(false);
+    }
+  };
 
   // Payment methods state with safe fallback
   const [paymentMethods, setPaymentMethods] = useState<OrganizerPaymentMethods>(() =>
@@ -496,6 +689,21 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
         >
           <ScanLine className="w-4 h-4 text-emerald-400" />
           <span>ماسح التذاكر للبوابة</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('sync');
+            checkHealth();
+          }}
+          className={`pb-3 px-3 border-b-2 transition flex items-center gap-2 whitespace-nowrap ${
+            activeTab === 'sync'
+              ? 'border-indigo-500 text-indigo-400'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Cloud className="w-4 h-4 text-sky-400" />
+          <span>مزامنة السحابة والنسخ الاحتياطي</span>
         </button>
       </div>
 
@@ -1208,6 +1416,166 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
           onEventChange={setSelectedScannerEventId}
           organizerId={organizer.id}
         />
+      )}
+
+      {/* ======================= TAB 6: CLOUD SYNC & BACKUP ======================= */}
+      {activeTab === 'sync' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Migration Banner & Actions */}
+          <div className="bg-gradient-to-br from-indigo-950/60 via-slate-900 to-slate-900 border border-indigo-500/30 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl pointer-events-none" />
+            
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-6 border-b border-slate-800">
+              <div className="flex items-center gap-3.5">
+                <div className="p-3 rounded-2xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                  <Cloud className="w-7 h-7" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-white">مركز ترحيل ومزامنة البيانات السحابية</h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    احفظ نسخة احتياطية من بياناتك أو ارفعها إلى السحابة المركزية لتظهر على كل الأجهزة والهواتف فوراً.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={checkHealth}
+                disabled={healthStatus.loading}
+                className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-2 transition cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${healthStatus.loading ? 'animate-spin' : ''}`} />
+                <span>فحص صحة اتصال السحابة</span>
+              </button>
+            </div>
+
+            {/* Health Check Status Card */}
+            <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-2xl">
+                <div className="text-[11px] text-slate-400 font-bold flex items-center gap-1.5">
+                  <Server className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>المتغيرات البيئية بـ Vercel:</span>
+                </div>
+                <div className="mt-1 text-sm font-black">
+                  {healthStatus.loading ? (
+                    <span className="text-slate-500">جاري الفحص...</span>
+                  ) : healthStatus.hasEnv ? (
+                    <span className="text-emerald-400 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> متوفرة ومعرفة</span>
+                  ) : (
+                    <span className="text-amber-400">تستخدم الإعدادات الافتراضية</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-2xl">
+                <div className="text-[11px] text-slate-400 font-bold flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-sky-400" />
+                  <span>حالة اتصال قاعدة البيانات:</span>
+                </div>
+                <div className="mt-1 text-sm font-black">
+                  {healthStatus.loading ? (
+                    <span className="text-slate-500">جاري الفحص...</span>
+                  ) : healthStatus.dbConnected ? (
+                    <span className="text-emerald-400 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> متصلة ونشطة بالسحابة</span>
+                  ) : (
+                    <span className="text-rose-400 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> {healthStatus.error || 'غير متصلة'}</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-slate-950/60 border border-slate-800 p-3.5 rounded-2xl">
+                <div className="text-[11px] text-slate-400 font-bold flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>الفعاليات بالسحابة المركزية:</span>
+                </div>
+                <div className="mt-1 text-sm font-black text-white">
+                  {healthStatus.loading ? (
+                    <span className="text-slate-500">جاري الفحص...</span>
+                  ) : (
+                    <span>{healthStatus.eventsCount ?? events.length} فعالية</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions Grid */}
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Option 1: Direct Cloud Migration */}
+              <div className="bg-slate-900/90 border border-indigo-500/20 p-5 rounded-2xl flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-indigo-400 font-black text-sm">
+                    <UploadCloud className="w-5 h-5" />
+                    <span>مزامنة وترحيل فوري إلى السحابة</span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                    يقوم هذا الخيار بقراءة كافة الفعاليات، فئات التذاكر، إعدادات الدفع، والتذاكر المخزنة في متصفحك ورفعها فوراً إلى قاعدة بيانات Supabase السحابية المركزية لتظهر على الهواتف والأجهزة الأخرى فوراً.
+                  </p>
+                </div>
+
+                <div className="mt-5">
+                  <button
+                    onClick={handleMigrateLocalDataToCloud}
+                    disabled={isMigrating}
+                    className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    <UploadCloud className={`w-4 h-4 ${isMigrating ? 'animate-bounce' : ''}`} />
+                    <span>{isMigrating ? 'جاري ترحيل البيانات إلى السحابة...' : '☁️ ترحيل كافة البيانات المحلية إلى السحابة الآن'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Option 2: JSON Backup Download */}
+              <div className="bg-slate-900/90 border border-slate-700/50 p-5 rounded-2xl flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-emerald-400 font-black text-sm">
+                    <FileJson className="w-5 h-5" />
+                    <span>تصدير نسخة احتياطية محلية (JSON Backup)</span>
+                  </div>
+                  <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                    قم بتنزيل ملف JSON كامل يحتوي على كل بيانات الفعاليات، الأسعار، التذاكر، والموظفين المحفوظة في متصفحك. يمكنك الاحتفاظ بالملف أو استيراده في أي وقت كضمان كامل ضد فقدان البيانات.
+                  </p>
+                </div>
+
+                <div className="mt-5">
+                  <button
+                    onClick={handleExportBackupJSON}
+                    className="w-full py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <DownloadCloud className="w-4 h-4 text-emerald-400" />
+                    <span>📥 تنزيل ملف النسخة الاحتياطية (JSON)</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Migration Feedback Message */}
+            {migrationStatus && (
+              <div
+                className={`mt-5 p-4 rounded-2xl border flex items-start gap-3 animate-fadeIn ${
+                  migrationStatus.success
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                }`}
+              >
+                {migrationStatus.success ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                ) : (
+                  <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <div className="font-bold text-xs">{migrationStatus.message}</div>
+                  {migrationStatus.details && (
+                    <div className="text-[11px] text-emerald-400/90 mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                      <span>• الفعاليات: {migrationStatus.details.events}</span>
+                      <span>• فئات التذاكر: {migrationStatus.details.tiers}</span>
+                      <span>• موظفو البوابات: {migrationStatus.details.staff}</span>
+                      <span>• التذاكر الصادرة: {migrationStatus.details.tickets}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* ======================= ADD GATE STAFF MODAL ======================= */}
