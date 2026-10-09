@@ -1,4 +1,4 @@
-import { EventItem, Order, Organizer, OrganizerPaymentMethods, ScanResult, Ticket, TicketTier } from '../types';
+import { EventItem, GateStaff, Order, Organizer, OrganizerPaymentMethods, ScanLogEntry, ScanResult, Ticket, TicketTier } from '../types';
 import { INITIAL_EVENTS, INITIAL_ORGANIZERS, INITIAL_TICKETS } from './mockData';
 import { supabase } from './supabase';
 
@@ -7,11 +7,13 @@ const TICKETS_STORAGE_KEY = 'tiktak_tickets_data_v2';
 const ORDERS_STORAGE_KEY = 'tiktak_orders_data_v2';
 const ORGANIZERS_STORAGE_KEY = 'tiktak_organizers_data_v2';
 const CURRENT_ORGANIZER_KEY = 'tiktak_current_organizer_v2';
+const GATE_STAFF_STORAGE_KEY = 'tiktak_gate_staff_v2';
+const SCAN_LOGS_STORAGE_KEY = 'tiktak_scan_logs_v2';
 
 export const PLATFORM_FEE_PERCENTAGE = 5.0; // 5% platform commission
 
 // Cross-tab / Cross-component Realtime Event Emitter
-export const notifyDataChange = (type: 'tickets' | 'events' | 'orders' | 'organizers') => {
+export const notifyDataChange = (type: 'tickets' | 'events' | 'orders' | 'organizers' | 'gate_staff' | 'scan_logs') => {
   window.dispatchEvent(new CustomEvent('tiktak:datachange', { detail: { type, timestamp: Date.now() } }));
 };
 
@@ -165,6 +167,88 @@ export const setLocalOrders = (orders: Order[]) => {
   const trimmed = orders.slice(0, 60);
   safeSetLocalStorage(ORDERS_STORAGE_KEY, JSON.stringify(trimmed));
   notifyDataChange('orders');
+};
+
+const INITIAL_GATE_STAFF: GateStaff[] = [
+  {
+    id: 'staff-1',
+    organizer_id: 'org-1',
+    name: 'أحمد بن خالد الرويلي',
+    role: 'مشرف البوابة الرئيسية (A)',
+    phone: '+966 50 111 2222',
+    pin_code: '1001',
+    assigned_gate: 'البوابة الرئيسية (A)',
+    assigned_event_id: 'all',
+    is_active: true,
+    total_scans_count: 84,
+    last_scan_at: new Date(Date.now() - 15 * 60000).toISOString(),
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'staff-2',
+    organizer_id: 'org-1',
+    name: 'سارة عبد الرحمن الناصر',
+    role: 'مسؤولة بوابة VIP',
+    phone: '+966 55 333 4444',
+    pin_code: '2002',
+    assigned_gate: 'بوابة كبار الشخصيات (VIP)',
+    assigned_event_id: 'all',
+    is_active: true,
+    total_scans_count: 32,
+    last_scan_at: new Date(Date.now() - 5 * 60000).toISOString(),
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'staff-3',
+    organizer_id: 'org-1',
+    name: 'فيصل محمد العتيبي',
+    role: 'فاحص تذاكر البوابة الشرقية (B)',
+    phone: '+966 54 888 9999',
+    pin_code: '3003',
+    assigned_gate: 'البوابة الشرقية (B)',
+    assigned_event_id: 'all',
+    is_active: true,
+    total_scans_count: 51,
+    last_scan_at: new Date(Date.now() - 30 * 60000).toISOString(),
+    created_at: new Date().toISOString(),
+  },
+];
+
+export const getLocalGateStaff = (): GateStaff[] => {
+  const saved = localStorage.getItem(GATE_STAFF_STORAGE_KEY);
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch {
+      // Fallback
+    }
+  }
+  safeSetLocalStorage(GATE_STAFF_STORAGE_KEY, JSON.stringify(INITIAL_GATE_STAFF));
+  return INITIAL_GATE_STAFF;
+};
+
+export const setLocalGateStaff = (staffList: GateStaff[]) => {
+  safeSetLocalStorage(GATE_STAFF_STORAGE_KEY, JSON.stringify(staffList));
+  notifyDataChange('gate_staff');
+};
+
+export const getLocalScanLogs = (): ScanLogEntry[] => {
+  const saved = localStorage.getItem(SCAN_LOGS_STORAGE_KEY);
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+export const setLocalScanLogs = (logs: ScanLogEntry[]) => {
+  // Keep up to 100 recent scan logs
+  const trimmed = logs.slice(0, 100);
+  safeSetLocalStorage(SCAN_LOGS_STORAGE_KEY, JSON.stringify(trimmed));
+  notifyDataChange('scan_logs');
 };
 
 export const dbService = {
@@ -580,6 +664,15 @@ export const dbService = {
     );
 
     if (ticketIndex === -1) {
+      this.addScanLog({
+        event_id: '',
+        ticket_code: cleanCode,
+        gate,
+        staff_name: staffName,
+        status: 'invalid',
+        notes: 'الرمز غير موجود في النظام',
+      });
+
       return {
         status: 'invalid',
         message: 'عذراً! التذكرة غير موجودة بالنظام أو الرمز غير صالح.',
@@ -590,15 +683,39 @@ export const dbService = {
     const ticket = tickets[ticketIndex];
 
     if (ticket.status === 'checked_in') {
+      this.addScanLog({
+        event_id: ticket.event_id,
+        ticket_id: ticket.id,
+        ticket_code: ticket.ticket_code,
+        buyer_name: ticket.buyer_name,
+        tier_name: ticket.tier_name,
+        gate,
+        staff_name: staffName,
+        status: 'already_used',
+        notes: `مسحت مسبقاً في ${ticket.checked_in_at ? new Date(ticket.checked_in_at).toLocaleTimeString('ar-SA') : ''} عبر ${ticket.gate_number || ''}`,
+      });
+
       return {
         status: 'already_used',
-        message: `تنبيه: تم مسح هذه التذكرة مسبقاً في ${new Date(ticket.checked_in_at || '').toLocaleTimeString('ar-SA')}`,
+        message: `تنبيه: تم مسح هذه التذكرة مسبقاً في ${new Date(ticket.checked_in_at || '').toLocaleTimeString('ar-SA')} عبر (${ticket.gate_number || 'البوابة'}).`,
         ticket,
         scannedAt: now,
       };
     }
 
     if (ticket.status === 'cancelled') {
+      this.addScanLog({
+        event_id: ticket.event_id,
+        ticket_id: ticket.id,
+        ticket_code: ticket.ticket_code,
+        buyer_name: ticket.buyer_name,
+        tier_name: ticket.tier_name,
+        gate,
+        staff_name: staffName,
+        status: 'invalid',
+        notes: 'التذكرة ملغاة من المنظم',
+      });
+
       return {
         status: 'invalid',
         message: 'هذه التذكرة تم إلغاؤها من قبل المنظم.',
@@ -613,9 +730,21 @@ export const dbService = {
 
     if (isGateLocked && ticketGate !== '' && ticketGate.toLowerCase() !== gate.trim().toLowerCase()) {
       // Gate Mismatch: Keep ticket VALID and do NOT mark checked in!
+      this.addScanLog({
+        event_id: ticket.event_id,
+        ticket_id: ticket.id,
+        ticket_code: ticket.ticket_code,
+        buyer_name: ticket.buyer_name,
+        tier_name: ticket.tier_name,
+        gate,
+        staff_name: staffName,
+        status: 'wrong_gate',
+        notes: `محاولة دخول من ${gate} والتذكرة مخصصة لـ ${ticketGate}`,
+      });
+
       return {
         status: 'wrong_gate',
-        message: `بوابة خاطئة! هذه التذكرة مخصصة لـ (${ticketGate}) فقط. التذكرة لا تزال صالحة وغير مستهلكة، يرجى توجيه الزائر لبوابته المخصصة.`,
+        message: `⚠️ بوابة خاطئة! هذه التذكرة مخصصة لـ (${ticketGate}) فقط. التذكرة لا تزال صالحة وغير مستهلكة، يرجى توجيه الزائر لبوابته المخصصة.`,
         ticket,
         scannedAt: now,
         expectedGate: ticketGate,
@@ -623,7 +752,7 @@ export const dbService = {
       };
     }
 
-    // Mark as Checked In
+    // Mark as Checked In (Consumed once only at the right gate!)
     const updatedTicket: Ticket = {
       ...ticket,
       status: 'checked_in',
@@ -634,6 +763,33 @@ export const dbService = {
 
     tickets[ticketIndex] = updatedTicket;
     setLocalTickets(tickets);
+
+    // Update staff total scan count and last scan time
+    const staffList = getLocalGateStaff();
+    const staffIndex = staffList.findIndex(
+      (s) => s.name.trim().toLowerCase() === staffName.trim().toLowerCase() || s.pin_code === staffName
+    );
+    if (staffIndex !== -1) {
+      staffList[staffIndex] = {
+        ...staffList[staffIndex],
+        total_scans_count: (staffList[staffIndex].total_scans_count || 0) + 1,
+        last_scan_at: now,
+      };
+      setLocalGateStaff(staffList);
+    }
+
+    // Record successful scan log
+    this.addScanLog({
+      event_id: ticket.event_id,
+      ticket_id: ticket.id,
+      ticket_code: ticket.ticket_code,
+      buyer_name: ticket.buyer_name,
+      tier_name: ticket.tier_name,
+      gate,
+      staff_name: staffName,
+      status: 'valid',
+      notes: 'تم الدخول بنجاح',
+    });
 
     // Sync with remote Supabase
     if (supabase) {
@@ -658,6 +814,62 @@ export const dbService = {
       ticket: updatedTicket,
       scannedAt: now,
     };
+  },
+
+  // ==================== GATE STAFF MANAGEMENT ====================
+  async getGateStaff(organizerId?: string): Promise<GateStaff[]> {
+    const all = getLocalGateStaff();
+    if (!organizerId) return all;
+    return all.filter((s) => s.organizer_id === organizerId);
+  },
+
+  async addGateStaff(staffData: Omit<GateStaff, 'id' | 'total_scans_count' | 'created_at'>): Promise<GateStaff> {
+    const newStaff: GateStaff = {
+      ...staffData,
+      id: 'staff-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 5),
+      total_scans_count: 0,
+      created_at: new Date().toISOString(),
+    };
+
+    const current = getLocalGateStaff();
+    setLocalGateStaff([newStaff, ...current]);
+    return newStaff;
+  },
+
+  async updateGateStaff(staffId: string, updates: Partial<GateStaff>): Promise<GateStaff | null> {
+    const current = getLocalGateStaff();
+    const idx = current.findIndex((s) => s.id === staffId);
+    if (idx === -1) return null;
+
+    current[idx] = { ...current[idx], ...updates };
+    setLocalGateStaff(current);
+    return current[idx];
+  },
+
+  async deleteGateStaff(staffId: string): Promise<boolean> {
+    const current = getLocalGateStaff();
+    const filtered = current.filter((s) => s.id !== staffId);
+    setLocalGateStaff(filtered);
+    return true;
+  },
+
+  // ==================== SCAN LOGS & REALTIME FEED ====================
+  async getScanLogs(eventId?: string): Promise<ScanLogEntry[]> {
+    const all = getLocalScanLogs();
+    if (!eventId || eventId === 'all') return all;
+    return all.filter((l) => l.event_id === eventId);
+  },
+
+  addScanLog(logData: Omit<ScanLogEntry, 'id' | 'timestamp'>): ScanLogEntry {
+    const newLog: ScanLogEntry = {
+      ...logData,
+      id: 'log-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 5),
+      timestamp: new Date().toISOString(),
+    };
+
+    const current = getLocalScanLogs();
+    setLocalScanLogs([newLog, ...current]);
+    return newLog;
   },
 
   // ==================== QUERIES ====================

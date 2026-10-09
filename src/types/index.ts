@@ -153,3 +153,32 @@ export interface ScanResult {
   expectedGate?: string;
   currentGate?: string;
 }
+
+export interface GateStaff {
+  id: string;
+  organizer_id: string;
+  name: string;
+  role?: string;
+  phone?: string;
+  pin_code: string;
+  assigned_gate: string;
+  assigned_event_id?: string;
+  is_active: boolean;
+  total_scans_count: number;
+  last_scan_at?: string;
+  created_at: string;
+}
+
+export interface ScanLogEntry {
+  id: string;
+  event_id: string;
+  ticket_id?: string;
+  ticket_code: string;
+  buyer_name?: string;
+  tier_name?: string;
+  gate: string;
+  staff_name: string;
+  status: 'valid' | 'already_used' | 'wrong_gate' | 'invalid' | 'wrong_event';
+  timestamp: string;
+  notes?: string;
+}

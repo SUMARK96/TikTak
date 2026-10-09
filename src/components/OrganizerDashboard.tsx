@@ -25,9 +25,14 @@ import {
   CalendarDays,
   X,
   AlertTriangle,
-  Clock
+  Clock,
+  UserCheck,
+  UserPlus,
+  KeyRound,
+  DoorClosed,
+  Copy
 } from 'lucide-react';
-import { EventItem, Organizer, OrganizerPaymentMethods, Ticket } from '../types';
+import { EventItem, GateStaff, Organizer, OrganizerPaymentMethods, Ticket } from '../types';
 import { dbService, PLATFORM_FEE_PERCENTAGE } from '../lib/database';
 import { ScannerView } from './ScannerView';
 
@@ -74,11 +79,22 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
   onViewTicket,
   onBrowseAsCustomer,
 }) => {
-  const [activeTab, setActiveTab] = useState<'events' | 'payments' | 'attendees' | 'scanner'>('events');
+  const [activeTab, setActiveTab] = useState<'events' | 'payments' | 'attendees' | 'staff' | 'scanner'>('events');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'checked_in' | 'valid'>('all');
   const [organizerTickets, setOrganizerTickets] = useState<Ticket[]>([]);
   const [selectedScannerEventId, setSelectedScannerEventId] = useState<string>('');
+
+  // Gate Staff Management State
+  const [gateStaffList, setGateStaffList] = useState<GateStaff[]>([]);
+  const [isAddStaffModalOpen, setIsAddStaffModalOpen] = useState(false);
+  const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState('مشرف بوابة الدخول');
+  const [newStaffPhone, setNewStaffPhone] = useState('');
+  const [newStaffGate, setNewStaffGate] = useState('البوابة الرئيسية (A)');
+  const [newStaffEventId, setNewStaffEventId] = useState('all');
+  const [newStaffPin, setNewStaffPin] = useState(() => Math.floor(1000 + Math.random() * 9000).toString());
+  const [copiedStaffId, setCopiedStaffId] = useState<string | null>(null);
 
   // Payment methods state with safe fallback
   const [paymentMethods, setPaymentMethods] = useState<OrganizerPaymentMethods>(() =>
@@ -129,6 +145,11 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
     setPostponingEvent(null);
   };
 
+  const loadStaffData = async () => {
+    const list = await dbService.getGateStaff(organizer.id);
+    setGateStaffList(list);
+  };
+
   useEffect(() => {
     let isMounted = true;
     const loadData = async () => {
@@ -138,10 +159,68 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
       }
     };
     loadData();
+    loadStaffData();
+
+    const unsubscribe = dbService.subscribeToChanges(() => {
+      if (isMounted) {
+        loadData();
+        loadStaffData();
+      }
+    });
+
     return () => {
       isMounted = false;
+      unsubscribe();
     };
   }, [organizer.id, events]);
+
+  const handleCreateStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStaffName.trim()) return;
+
+    await dbService.addGateStaff({
+      organizer_id: organizer.id,
+      name: newStaffName.trim(),
+      role: newStaffRole.trim() || 'مشرف بوابة',
+      phone: newStaffPhone.trim(),
+      pin_code: newStaffPin || Math.floor(1000 + Math.random() * 9000).toString(),
+      assigned_gate: newStaffGate,
+      assigned_event_id: newStaffEventId,
+      is_active: true,
+    });
+
+    setNewStaffName('');
+    setNewStaffPhone('');
+    setNewStaffPin(Math.floor(1000 + Math.random() * 9000).toString());
+    setIsAddStaffModalOpen(false);
+    await loadStaffData();
+  };
+
+  const handleToggleStaffActive = async (staff: GateStaff) => {
+    await dbService.updateGateStaff(staff.id, { is_active: !staff.is_active });
+    await loadStaffData();
+  };
+
+  const handleDeleteStaff = async (staff: GateStaff) => {
+    if (window.confirm(`هل أنت متأكد من حذف الموظف "${staff.name}" وسحب صلاحيات المسح؟`)) {
+      await dbService.deleteGateStaff(staff.id);
+      await loadStaffData();
+    }
+  };
+
+  const handleCopyStaffAccess = (staff: GateStaff) => {
+    const accessText = `🔑 بيانات دخول ماسح تذاكر تيك تاك للموظف: ${staff.name}\n🚪 البوابة المخصصة: ${staff.assigned_gate}\n🔢 رمز المرور (PIN): ${staff.pin_code}\n🌐 رابط الدخول: ${window.location.origin}`;
+    navigator.clipboard.writeText(accessText);
+    setCopiedStaffId(staff.id);
+    setTimeout(() => setCopiedStaffId(null), 2500);
+  };
+
+  const handleOpenScannerForStaff = (staff: GateStaff) => {
+    if (staff.assigned_event_id && staff.assigned_event_id !== 'all') {
+      setSelectedScannerEventId(staff.assigned_event_id);
+    }
+    setActiveTab('scanner');
+  };
 
   useEffect(() => {
     if (myEvents.length > 0 && !selectedScannerEventId) {
@@ -393,6 +472,18 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
         >
           <Users className="w-4 h-4" />
           <span>سجل الحضور والمبيعات ({organizerTickets.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('staff')}
+          className={`pb-3 px-3 border-b-2 transition flex items-center gap-2 whitespace-nowrap ${
+            activeTab === 'staff'
+              ? 'border-indigo-500 text-indigo-400'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <UserCheck className="w-4 h-4 text-indigo-400" />
+          <span>فريق البوابات وصلاحيات المسح ({gateStaffList.length})</span>
         </button>
 
         <button
@@ -952,13 +1043,287 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
         </div>
       )}
 
-      {/* ======================= TAB 4: SCANNER ======================= */}
+      {/* ======================= TAB 4: GATE STAFF MANAGEMENT & PERMISSIONS ======================= */}
+      {activeTab === 'staff' && (
+        <div className="space-y-6 animate-fadeIn">
+          {/* Header & Add Button */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base sm:text-lg font-black text-white">
+                    إدارة موظفي البوابات وصلاحيات المسح
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    تحديد فريق المراقبين، تعيين البوابات المخصصة، وتوليد رموز PIN للدخول السريع إلى الماسح
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setNewStaffPin(Math.floor(1000 + Math.random() * 9000).toString());
+                setIsAddStaffModalOpen(true);
+              }}
+              className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 font-bold text-xs text-white shadow-lg shadow-indigo-600/20 transition active:scale-95 cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>إضافة موظف بوابة جديد</span>
+            </button>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+              <div className="text-xs text-slate-400 font-medium">إجمالي الموظفين المسجلين</div>
+              <div className="text-2xl font-black text-white mt-1">{gateStaffList.length}</div>
+              <div className="text-[11px] text-indigo-400 mt-0.5">مشرفين وموظفي بوابات</div>
+            </div>
+
+            <div className="bg-slate-900 border border-emerald-900/30 p-4 rounded-2xl bg-emerald-950/10">
+              <div className="text-xs text-emerald-300 font-medium">الموظفون المفعّلون حالياً</div>
+              <div className="text-2xl font-black text-emerald-400 mt-1">
+                {gateStaffList.filter((s) => s.is_active).length}
+              </div>
+              <div className="text-[11px] text-emerald-500/80 mt-0.5">لديهم إمكانية فحص ومسح التذاكر</div>
+            </div>
+
+            <div className="bg-slate-900 border border-indigo-900/30 p-4 rounded-2xl bg-indigo-950/10">
+              <div className="text-xs text-indigo-300 font-medium">إجمالي عمليات المسح للفريق</div>
+              <div className="text-2xl font-black text-indigo-400 mt-1">
+                {gateStaffList.reduce((acc, s) => acc + (s.total_scans_count || 0), 0)}
+              </div>
+              <div className="text-[11px] text-indigo-400 mt-0.5">عملية مسح وتدقيق مسجلة</div>
+            </div>
+          </div>
+
+          {/* Staff Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {gateStaffList.map((staff) => (
+              <div
+                key={staff.id}
+                className={`bg-slate-900 border rounded-3xl p-5 shadow-xl space-y-4 transition flex flex-col justify-between ${
+                  staff.is_active ? 'border-slate-800 hover:border-slate-700' : 'border-slate-800/60 opacity-60'
+                }`}
+              >
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-2xl bg-indigo-600/20 text-indigo-300 font-black flex items-center justify-center border border-indigo-500/30">
+                        {staff.name.charAt(0)}
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-white text-sm">{staff.name}</h4>
+                        <p className="text-[11px] text-slate-400">{staff.role || 'مشرف بوابة'}</p>
+                      </div>
+                    </div>
+
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={staff.is_active}
+                        onChange={() => handleToggleStaffActive(staff)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                    </label>
+                  </div>
+
+                  {/* Assigned Gate & PIN Info */}
+                  <div className="bg-slate-950/70 p-3 rounded-2xl border border-slate-800/80 space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 flex items-center gap-1">
+                        <DoorClosed className="w-3.5 h-3.5 text-emerald-400" />
+                        البوابة:
+                      </span>
+                      <span className="font-bold text-emerald-300">{staff.assigned_gate}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400 flex items-center gap-1">
+                        <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                        رمز PIN:
+                      </span>
+                      <span className="font-mono font-black text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
+                        {staff.pin_code}
+                      </span>
+                    </div>
+
+                    {staff.phone && (
+                      <div className="flex items-center justify-between text-slate-400 text-[11px]">
+                        <span>الجوال:</span>
+                        <span className="font-mono text-slate-300">{staff.phone}</span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800">
+                      <span className="text-slate-500">عمليات المسح:</span>
+                      <span className="font-bold text-white font-mono">{staff.total_scans_count || 0} تذكرة</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800/80">
+                  <button
+                    onClick={() => handleCopyStaffAccess(staff)}
+                    className="py-2 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    {copiedStaffId === staff.id ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400">تم النسخ</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>نسخ بيانات الدخول</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => handleOpenScannerForStaff(staff)}
+                    className="py-2 px-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  >
+                    <ScanLine className="w-3.5 h-3.5" />
+                    <span>فتح الماسح</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ======================= TAB 5: SCANNER ======================= */}
       {activeTab === 'scanner' && (
         <ScannerView
           events={myEvents}
           selectedEventId={selectedScannerEventId}
           onEventChange={setSelectedScannerEventId}
+          organizerId={organizer.id}
         />
+      )}
+
+      {/* ======================= ADD GATE STAFF MODAL ======================= */}
+      {isAddStaffModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="relative w-full max-w-md bg-slate-900 border border-slate-700 rounded-3xl shadow-2xl p-6 text-slate-100 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-indigo-400" />
+                <h3 className="font-bold text-white text-base">إضافة موظف بوابة وتعيين الصلاحيات</h3>
+              </div>
+              <button
+                onClick={() => setIsAddStaffModalOpen(false)}
+                className="p-1.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateStaff} className="space-y-3 pt-1">
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">
+                  اسم الموظف / المراقب:
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newStaffName}
+                  onChange={(e) => setNewStaffName(e.target.value)}
+                  placeholder="مثال: خالد عبد الله الدوسري"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    المسمى / الدور:
+                  </label>
+                  <input
+                    type="text"
+                    value={newStaffRole}
+                    onChange={(e) => setNewStaffRole(e.target.value)}
+                    placeholder="مشرف بوابة"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">
+                    رقم الجوال (اختياري):
+                  </label>
+                  <input
+                    type="tel"
+                    value={newStaffPhone}
+                    onChange={(e) => setNewStaffPhone(e.target.value)}
+                    placeholder="0500000000"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-emerald-300 mb-1">
+                  البوابة المخصصة لهذا الموظف:
+                </label>
+                <select
+                  value={newStaffGate}
+                  onChange={(e) => setNewStaffGate(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-bold focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="البوابة الرئيسية (A)">🚪 البوابة الرئيسية (A)</option>
+                  <option value="بوابة كبار الشخصيات (VIP)">🚪 بوابة كبار الشخصيات (VIP)</option>
+                  <option value="البوابة الشرقية (B)">🚪 البوابة الشرقية (B)</option>
+                  <option value="جميع البوابات">🌐 جميع البوابات (صلاحيات كاملة)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-amber-300 mb-1 flex items-center justify-between">
+                  <span>رمز المرور السريع (PIN):</span>
+                  <button
+                    type="button"
+                    onClick={() => setNewStaffPin(Math.floor(1000 + Math.random() * 9000).toString())}
+                    className="text-[10px] text-amber-400 hover:underline"
+                  >
+                    توليد PIN عشوائي
+                  </button>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newStaffPin}
+                  onChange={(e) => setNewStaffPin(e.target.value)}
+                  className="w-full bg-slate-950 border border-amber-500/40 rounded-xl px-3 py-2 text-sm text-amber-400 font-mono font-black focus:outline-none focus:border-amber-400"
+                />
+              </div>
+
+              <div className="pt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddStaffModalOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition cursor-pointer"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 transition cursor-pointer"
+                >
+                  حفظ وتفعيل الموظف
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* ======================= POSTPONE EVENT MODAL ======================= */}
