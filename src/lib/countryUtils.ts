@@ -22,6 +22,15 @@ export const COUNTRIES: CountryConfig[] = [
   { code: 'EU', name: 'الاتحاد الأوروبي', shortName: 'أوروبا', flag: '🇪🇺', currency: '€', currencyCode: 'EUR' },
 ];
 
+export type PaymentMethodId = 'stripe' | 'bankak' | 'vodafone_cash';
+
+export interface CountryPaymentChannel {
+  id: PaymentMethodId;
+  name: string;
+  badge: string;
+  description: string;
+}
+
 export const getCountryConfig = (countryNameOrCode?: string): CountryConfig => {
   if (!countryNameOrCode) return COUNTRIES[0];
   const q = countryNameOrCode.trim().toLowerCase();
@@ -35,7 +44,28 @@ export const getCountryConfig = (countryNameOrCode?: string): CountryConfig => {
   return found || COUNTRIES[0];
 };
 
+/**
+ * Returns supported payment channels according to the event country.
+ * - UAE (AE), SA, QA, KW, etc.: Card / Stripe / Apple Pay
+ * - Sudan (SD): Bankak (Bank of Khartoum) + Card / Stripe
+ * - Egypt (EG): Vodafone Cash + Card / Stripe
+ */
+export const getSupportedPaymentMethodsForCountry = (countryNameOrCode?: string): PaymentMethodId[] => {
+  const config = getCountryConfig(countryNameOrCode);
+  const code = config.code.toUpperCase();
+
+  if (code === 'SD') {
+    return ['stripe', 'bankak'];
+  }
+  if (code === 'EG') {
+    return ['stripe', 'vodafone_cash'];
+  }
+  // UAE (AE), Saudi Arabia (SA), and all international countries default to Card / Stripe
+  return ['stripe'];
+};
+
 export const formatPriceWithCurrency = (price: number, currency: string = 'ر.س'): string => {
   if (price === 0) return 'مجاناً';
   return `${price} ${currency}`;
 };
+

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { EventItem, Organizer, OrganizerPaymentMethods, TicketTier, Ticket } from '../types';
 import { dbService } from '../lib/database';
+import { getCountryConfig, getSupportedPaymentMethodsForCountry } from '../lib/countryUtils';
 
 interface EventBookingModalProps {
   event: EventItem | null;
@@ -55,14 +56,24 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
       if (event.ticket_tiers && event.ticket_tiers.length > 0) {
         setSelectedTier(event.ticket_tiers[0]);
       }
+      
+      const countryConfig = getCountryConfig(event.country || event.city);
+      const supported = getSupportedPaymentMethodsForCountry(event.country || event.city);
+
       dbService.getOrganizerById(event.organizer_id).then((org) => {
         setOrganizer(org);
-        const raw = org?.payment_methods as any;
-        const stripeOn = (event?.payment_methods ? event.payment_methods.stripe : raw?.stripe?.enabled) ?? true;
-        const bankakOn = (event?.payment_methods ? event.payment_methods.bankak : raw?.bankak?.enabled) ?? true;
-        const vodafoneOn = (event?.payment_methods ? event.payment_methods.vodafone_cash : raw?.vodafone_cash?.enabled) ?? true;
+        const raw = (org?.payment_methods as any) || {};
 
-        if (stripeOn) {
+        const stripeOn = supported.includes('stripe') && ((event?.payment_methods ? event.payment_methods.stripe : raw?.stripe?.enabled) ?? true);
+        const bankakOn = supported.includes('bankak') && ((event?.payment_methods ? event.payment_methods.bankak : raw?.bankak?.enabled) ?? true);
+        const vodafoneOn = supported.includes('vodafone_cash') && ((event?.payment_methods ? event.payment_methods.vodafone_cash : raw?.vodafone_cash?.enabled) ?? true);
+
+        // Auto select the primary method for this country
+        if (countryConfig.code === 'SD' && bankakOn) {
+          setPaymentMethod('bankak');
+        } else if (countryConfig.code === 'EG' && vodafoneOn) {
+          setPaymentMethod('vodafone_cash');
+        } else if (stripeOn) {
           setPaymentMethod('stripe');
         } else if (bankakOn) {
           setPaymentMethod('bankak');
@@ -176,19 +187,22 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
     }
   };
 
+  const countryConfig = getCountryConfig(event.country || event.city);
+  const supportedChannels = getSupportedPaymentMethodsForCountry(event.country || event.city);
+
   const orgRaw = (organizer?.payment_methods as any) || {};
   
-  // Specific event payment method choice takes priority over organizer default
-  const isStripeEnabled = (event?.payment_methods ? event.payment_methods.stripe : orgRaw.stripe?.enabled) ?? true;
-  const isBankakEnabled = (event?.payment_methods ? event.payment_methods.bankak : orgRaw.bankak?.enabled) ?? true;
-  const isVodafoneEnabled = (event?.payment_methods ? event.payment_methods.vodafone_cash : orgRaw.vodafone_cash?.enabled) ?? true;
+  // Specific event payment method choice filtered strictly by country support
+  const isStripeEnabled = supportedChannels.includes('stripe') && ((event?.payment_methods ? event.payment_methods.stripe : orgRaw.stripe?.enabled) ?? true);
+  const isBankakEnabled = supportedChannels.includes('bankak') && ((event?.payment_methods ? event.payment_methods.bankak : orgRaw.bankak?.enabled) ?? true);
+  const isVodafoneEnabled = supportedChannels.includes('vodafone_cash') && ((event?.payment_methods ? event.payment_methods.vodafone_cash : orgRaw.vodafone_cash?.enabled) ?? true);
 
   const orgPayments: OrganizerPaymentMethods = {
     stripe: {
       enabled: isStripeEnabled,
       publishable_key: orgRaw.stripe?.publishable_key || 'pk_live_organizer_key',
       account_id: orgRaw.stripe?.account_id || '',
-      currency: orgRaw.stripe?.currency || 'SAR',
+      currency: (event.currency_code as any) || (countryConfig.currencyCode as any) || orgRaw.stripe?.currency || 'SAR',
     },
     bankak: {
       enabled: isBankakEnabled,
@@ -402,23 +416,43 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
         {/* STEP 3: Direct Organizer Payment Channels - ONLY ENABLED CHANNELS DISPLAYED */}
         {step === 'payment' && (
           <div className="py-4 space-y-4">
+            {/* Country and Organizer Payment context badge */}
+            <div className="flex items-center justify-between bg-slate-800/80 px-3.5 py-2.5 rounded-2xl border border-slate-700/60 text-xs">
+              <div className="flex items-center gap-2.5 text-slate-300">
+                <span className="text-xl">{countryConfig.flag}</span>
+                <div>
+                  <div className="font-bold text-white text-xs">{countryConfig.name}</div>
+                  <div className="text-[11px] text-slate-400">
+                    {countryConfig.code === 'SD'
+                      ? 'متاح الدفع بتطبيق بنكك أو البطاقات البنكية'
+                      : countryConfig.code === 'EG'
+                      ? 'متاح الدفع بمحفظة فودافون كاش أو البطاقات البنكية'
+                      : 'الدفع بالبطاقات البنكية (Visa / Mastercard / Apple Pay)'}
+                  </div>
+                </div>
+              </div>
+              <span className="text-emerald-400 font-bold text-[10px] bg-emerald-500/10 border border-emerald-500/30 px-2 py-1 rounded-lg shrink-0">
+                تحصيل فوري للمنظم
+              </span>
+            </div>
+
             <div>
               <div className="text-xs font-bold text-slate-200 mb-1">
                 الدفع المباشر لحساب المنظم ({event.organizer_name}):
               </div>
               <p className="text-[11px] text-slate-400">
-                طرق الدفع المعتمدة والمفعلة من قبل منظم هذه الفعالية:
+                طرق الدفع المعتمدة والمفعلة لفعاليات {countryConfig.shortName}:
               </p>
             </div>
 
-            {/* ONLY RENDER ENABLED PAYMENT METHODS */}
+            {/* ONLY RENDER ENABLED PAYMENT METHODS FOR THIS COUNTRY */}
             <div className="flex flex-wrap gap-2">
               {orgPayments.stripe?.enabled && (
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('stripe')}
-                  className={`flex-1 min-w-[110px] p-3 rounded-2xl border text-xs font-bold flex flex-col items-center gap-1.5 transition ${
-                    (paymentMethod === 'stripe' || (!orgPayments.bankak?.enabled && !orgPayments.vodafone_cash?.enabled))
+                  className={`flex-1 min-w-[120px] p-3 rounded-2xl border text-xs font-bold flex flex-col items-center gap-1.5 transition ${
+                    paymentMethod === 'stripe'
                       ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow-lg'
                       : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
                   }`}
@@ -426,7 +460,7 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
                   <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 font-black flex items-center justify-center text-xs">
                     S
                   </div>
-                  <span>Stripe / بطاقة</span>
+                  <span>بطاقة بنكية / Stripe</span>
                 </button>
               )}
 
@@ -434,14 +468,14 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('bankak')}
-                  className={`flex-1 min-w-[110px] p-3 rounded-2xl border text-xs font-bold flex flex-col items-center gap-1.5 transition ${
+                  className={`flex-1 min-w-[120px] p-3 rounded-2xl border text-xs font-bold flex flex-col items-center gap-1.5 transition ${
                     paymentMethod === 'bankak'
                       ? 'bg-emerald-600/20 border-emerald-500 text-emerald-300 shadow-lg'
                       : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   <Building className="w-5 h-5 text-emerald-400" />
-                  <span>بنكك (السودان 🇸🇩)</span>
+                  <span>تطبيق بنكك (السودان 🇸🇩)</span>
                 </button>
               )}
 
@@ -449,7 +483,7 @@ export const EventBookingModal: React.FC<EventBookingModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('vodafone_cash')}
-                  className={`flex-1 min-w-[110px] p-3 rounded-2xl border text-xs font-bold flex flex-col items-center gap-1.5 transition ${
+                  className={`flex-1 min-w-[120px] p-3 rounded-2xl border text-xs font-bold flex flex-col items-center gap-1.5 transition ${
                     paymentMethod === 'vodafone_cash'
                       ? 'bg-red-600/20 border-red-500 text-red-300 shadow-lg'
                       : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'

@@ -183,10 +183,28 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
   const handleSavePaymentMethods = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingPayment(true);
-    await dbService.updateOrganizerPaymentMethods(organizer.id, paymentMethods);
+
+    // Auto-enable any payment method where organizer entered data or kept toggle enabled
+    const updatedMethods: OrganizerPaymentMethods = {
+      stripe: {
+        ...paymentMethods.stripe,
+        enabled: paymentMethods.stripe.enabled || (paymentMethods.stripe.publishable_key.trim().length > 0),
+      },
+      bankak: {
+        ...paymentMethods.bankak,
+        enabled: paymentMethods.bankak.enabled || (paymentMethods.bankak.account_number.trim().length > 0),
+      },
+      vodafone_cash: {
+        ...paymentMethods.vodafone_cash,
+        enabled: paymentMethods.vodafone_cash.enabled || (paymentMethods.vodafone_cash.wallet_number.trim().length > 0),
+      },
+    };
+
+    setPaymentMethods(updatedMethods);
+    await dbService.updateOrganizerPaymentMethods(organizer.id, updatedMethods);
     setSavingPayment(false);
     setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2500);
+    setTimeout(() => setSaveSuccess(false), 3500);
   };
 
   const exportCSV = () => {
@@ -544,247 +562,283 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
           <form onSubmit={handleSavePaymentMethods} className="space-y-6">
             {/* 1. Stripe Payment Gateway */}
             <div className="p-4 sm:p-5 rounded-2xl bg-slate-800/60 border border-slate-700/80 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-black text-sm">
                     S
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-sm">بوابة الدفع العالمية Stripe</h3>
-                    <p className="text-[11px] text-slate-400">استلام مدفوعات البطاقات البنكية الدولية ومحفظة Apple Pay لحساب Stripe الخاص بك</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-bold text-white text-sm">بوابة الدفع العالمية Stripe</h3>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/30">
+                        الإمارات 🇦🇪، السعودية 🇸🇦، وكافة الدول 🌍
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">استلام مدفوعات البطاقات البنكية الدولية ومحفظة Apple Pay لحساب Stripe الخاص بك</p>
                   </div>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[11px] font-bold ${paymentMethods.stripe.enabled ? 'text-emerald-400' : 'text-slate-400'}`}>
+                    {paymentMethods.stripe.enabled ? 'مفعلة' : 'معطلة'}
+                  </span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={paymentMethods.stripe.enabled}
+                      onChange={(e) =>
+                        setPaymentMethods({
+                          ...paymentMethods,
+                          stripe: { ...paymentMethods.stripe, enabled: e.target.checked },
+                        })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-700/50">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-300 mb-1">المفتاح العام للمنظم (Publishable Key):</label>
                   <input
-                    type="checkbox"
-                    checked={paymentMethods.stripe.enabled}
+                    type="text"
+                    value={paymentMethods.stripe.publishable_key}
                     onChange={(e) =>
                       setPaymentMethods({
                         ...paymentMethods,
-                        stripe: { ...paymentMethods.stripe, enabled: e.target.checked },
+                        stripe: {
+                          ...paymentMethods.stripe,
+                          publishable_key: e.target.value,
+                          enabled: e.target.value.trim().length > 0 ? true : paymentMethods.stripe.enabled,
+                        },
                       })
                     }
-                    className="sr-only peer"
+                    placeholder="pk_live_..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono text-left"
                   />
-                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                </label>
-              </div>
-
-              {paymentMethods.stripe.enabled && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-700/50">
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-slate-300 mb-1">المفتاح العام للمنظم (Publishable Key):</label>
-                    <input
-                      type="text"
-                      value={paymentMethods.stripe.publishable_key}
-                      onChange={(e) =>
-                        setPaymentMethods({
-                          ...paymentMethods,
-                          stripe: { ...paymentMethods.stripe, publishable_key: e.target.value },
-                        })
-                      }
-                      placeholder="pk_live_..."
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono text-left"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">العملة الافتراضية:</label>
-                    <select
-                      value={paymentMethods.stripe.currency}
-                      onChange={(e) =>
-                        setPaymentMethods({
-                          ...paymentMethods,
-                          stripe: {
-                            ...paymentMethods.stripe,
-                            currency: e.target.value as 'USD' | 'SAR' | 'EUR' | 'AED' | 'EGP',
-                          },
-                        })
-                      }
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
-                    >
-                      <option value="SAR">ريال سعودي (SAR)</option>
-                      <option value="USD">دولار أمريكي (USD)</option>
-                      <option value="EGP">جنيه مصري (EGP)</option>
-                      <option value="AED">درهم إماراتي (AED)</option>
-                      <option value="EUR">يورو (EUR)</option>
-                    </select>
-                  </div>
                 </div>
-              )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">العملة الافتراضية:</label>
+                  <select
+                    value={paymentMethods.stripe.currency}
+                    onChange={(e) =>
+                      setPaymentMethods({
+                        ...paymentMethods,
+                        stripe: {
+                          ...paymentMethods.stripe,
+                          currency: e.target.value as 'USD' | 'SAR' | 'EUR' | 'AED' | 'EGP',
+                        },
+                      })
+                    }
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  >
+                    <option value="AED">درهم إماراتي (AED)</option>
+                    <option value="SAR">ريال سعودي (SAR)</option>
+                    <option value="USD">دولار أمريكي (USD)</option>
+                    <option value="EGP">جنيه مصري (EGP)</option>
+                    <option value="EUR">يورو (EUR)</option>
+                  </select>
+                </div>
+              </div>
             </div>
 
             {/* 2. Bankak Sudan (Bank of Khartoum) */}
             <div className="p-4 sm:p-5 rounded-2xl bg-slate-800/60 border border-slate-700/80 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-emerald-600/20 text-emerald-400 flex items-center justify-center">
                     <Building className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-sm">تطبيق بنكك (بنك الخرطوم - السودان)</h3>
-                    <p className="text-[11px] text-slate-400">استلام التحويلات المباشرة عبر حساب بنكك السودان الخاص بالمنظم</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-bold text-white text-sm">تطبيق بنكك (بنك الخرطوم - السودان)</h3>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                        يرتبط تلقائياً بفعاليات السودان 🇸🇩
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">استلام التحويلات المباشرة عبر حساب بنكك السودان الخاص بالمنظم</p>
                   </div>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[11px] font-bold ${paymentMethods.bankak.enabled ? 'text-emerald-400' : 'text-slate-400'}`}>
+                    {paymentMethods.bankak.enabled ? 'مفعلة' : 'معطلة'}
+                  </span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={paymentMethods.bankak.enabled}
+                      onChange={(e) =>
+                        setPaymentMethods({
+                          ...paymentMethods,
+                          bankak: { ...paymentMethods.bankak, enabled: e.target.checked },
+                        })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-700/50">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">رقم حساب بنكك (Account Number):</label>
                   <input
-                    type="checkbox"
-                    checked={paymentMethods.bankak.enabled}
+                    type="text"
+                    value={paymentMethods.bankak.account_number}
                     onChange={(e) =>
                       setPaymentMethods({
                         ...paymentMethods,
-                        bankak: { ...paymentMethods.bankak, enabled: e.target.checked },
+                        bankak: {
+                          ...paymentMethods.bankak,
+                          account_number: e.target.value,
+                          enabled: e.target.value.trim().length > 0 ? true : paymentMethods.bankak.enabled,
+                        },
                       })
                     }
-                    className="sr-only peer"
+                    placeholder="مثال: 2849102"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono text-left"
                   />
-                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                </label>
-              </div>
-
-              {paymentMethods.bankak.enabled && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-700/50">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">رقم حساب بنكك (Account Number):</label>
-                    <input
-                      type="text"
-                      value={paymentMethods.bankak.account_number}
-                      onChange={(e) =>
-                        setPaymentMethods({
-                          ...paymentMethods,
-                          bankak: { ...paymentMethods.bankak, account_number: e.target.value },
-                        })
-                      }
-                      placeholder="مثال: 2849102"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono text-left"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">اسم صاحب الحساب بالكامل:</label>
-                    <input
-                      type="text"
-                      value={paymentMethods.bankak.account_name}
-                      onChange={(e) =>
-                        setPaymentMethods({
-                          ...paymentMethods,
-                          bankak: { ...paymentMethods.bankak, account_name: e.target.value },
-                        })
-                      }
-                      placeholder="الاسم المسجل في بنك الخرطوم"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-slate-300 mb-1">تعليمات التحويل للعميل:</label>
-                    <input
-                      type="text"
-                      value={paymentMethods.bankak.instructions || ''}
-                      onChange={(e) =>
-                        setPaymentMethods({
-                          ...paymentMethods,
-                          bankak: { ...paymentMethods.bankak, instructions: e.target.value },
-                        })
-                      }
-                      placeholder="يرجى إرفاق إشعار التحويل من تطبيق بنكك بعد إتمام العملية."
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
-                    />
-                  </div>
                 </div>
-              )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">اسم صاحب الحساب بالكامل:</label>
+                  <input
+                    type="text"
+                    value={paymentMethods.bankak.account_name}
+                    onChange={(e) =>
+                      setPaymentMethods({
+                        ...paymentMethods,
+                        bankak: { ...paymentMethods.bankak, account_name: e.target.value },
+                      })
+                    }
+                    placeholder="الاسم المسجل في بنك الخرطوم"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-300 mb-1">تعليمات التحويل للعميل:</label>
+                  <input
+                    type="text"
+                    value={paymentMethods.bankak.instructions || ''}
+                    onChange={(e) =>
+                      setPaymentMethods({
+                        ...paymentMethods,
+                        bankak: { ...paymentMethods.bankak, instructions: e.target.value },
+                      })
+                    }
+                    placeholder="يرجى إرفاق إشعار التحويل من تطبيق بنكك بعد إتمام العملية."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* 3. Vodafone Cash (Egypt) */}
             <div className="p-4 sm:p-5 rounded-2xl bg-slate-800/60 border border-slate-700/80 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-red-600/20 text-red-400 flex items-center justify-center">
                     <Smartphone className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-white text-sm">محفظة فودافون كاش (Vodafone Cash - مصر)</h3>
-                    <p className="text-[11px] text-slate-400">استلام التحويلات السريعة عبر رقم محفظة فودافون كاش للمنظم</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-bold text-white text-sm">محفظة فودافون كاش (Vodafone Cash - مصر)</h3>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 font-bold border border-red-500/30">
+                        يرتبط تلقائياً بفعاليات مصر 🇪🇬
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">استلام التحويلات السريعة عبر رقم محفظة فودافون كاش للمنظم</p>
                   </div>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[11px] font-bold ${paymentMethods.vodafone_cash.enabled ? 'text-red-400' : 'text-slate-400'}`}>
+                    {paymentMethods.vodafone_cash.enabled ? 'مفعلة' : 'معطلة'}
+                  </span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={paymentMethods.vodafone_cash.enabled}
+                      onChange={(e) =>
+                        setPaymentMethods({
+                          ...paymentMethods,
+                          vodafone_cash: { ...paymentMethods.vodafone_cash, enabled: e.target.checked },
+                        })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-700/50">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">رقم محفظة فودافون كاش:</label>
                   <input
-                    type="checkbox"
-                    checked={paymentMethods.vodafone_cash.enabled}
+                    type="text"
+                    value={paymentMethods.vodafone_cash.wallet_number}
                     onChange={(e) =>
                       setPaymentMethods({
                         ...paymentMethods,
-                        vodafone_cash: { ...paymentMethods.vodafone_cash, enabled: e.target.checked },
+                        vodafone_cash: {
+                          ...paymentMethods.vodafone_cash,
+                          wallet_number: e.target.value,
+                          enabled: e.target.value.trim().length > 0 ? true : paymentMethods.vodafone_cash.enabled,
+                        },
                       })
                     }
-                    className="sr-only peer"
+                    placeholder="010XXXXXXXX"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono text-left"
                   />
-                  <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                </label>
-              </div>
-
-              {paymentMethods.vodafone_cash.enabled && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-slate-700/50">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">رقم محفظة فودافون كاش:</label>
-                    <input
-                      type="text"
-                      value={paymentMethods.vodafone_cash.wallet_number}
-                      onChange={(e) =>
-                        setPaymentMethods({
-                          ...paymentMethods,
-                          vodafone_cash: { ...paymentMethods.vodafone_cash, wallet_number: e.target.value },
-                        })
-                      }
-                      placeholder="010XXXXXXXX"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono text-left"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-300 mb-1">اسم صاحب المحفظة:</label>
-                    <input
-                      type="text"
-                      value={paymentMethods.vodafone_cash.wallet_name}
-                      onChange={(e) =>
-                        setPaymentMethods({
-                          ...paymentMethods,
-                          vodafone_cash: { ...paymentMethods.vodafone_cash, wallet_name: e.target.value },
-                        })
-                      }
-                      placeholder="الاسم المسجل في المحفظة"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-slate-300 mb-1">تعليمات التحويل للعميل:</label>
-                    <input
-                      type="text"
-                      value={paymentMethods.vodafone_cash.instructions || ''}
-                      onChange={(e) =>
-                        setPaymentMethods({
-                          ...paymentMethods,
-                          vodafone_cash: { ...paymentMethods.vodafone_cash, instructions: e.target.value },
-                        })
-                      }
-                      placeholder="قم بالتحويل عبر كود فودافون كاش *9*7*رقم المحفظة*المبلغ# وأرسل التأكيد."
-                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
-                    />
-                  </div>
                 </div>
-              )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">اسم صاحب المحفظة:</label>
+                  <input
+                    type="text"
+                    value={paymentMethods.vodafone_cash.wallet_name}
+                    onChange={(e) =>
+                      setPaymentMethods({
+                        ...paymentMethods,
+                        vodafone_cash: { ...paymentMethods.vodafone_cash, wallet_name: e.target.value },
+                      })
+                    }
+                    placeholder="الاسم المسجل في المحفظة"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-300 mb-1">تعليمات التحويل للعميل:</label>
+                  <input
+                    type="text"
+                    value={paymentMethods.vodafone_cash.instructions || ''}
+                    onChange={(e) =>
+                      setPaymentMethods({
+                        ...paymentMethods,
+                        vodafone_cash: { ...paymentMethods.vodafone_cash, instructions: e.target.value },
+                      })
+                    }
+                    placeholder="قم بالتحويل عبر كود فودافون كاش *9*7*رقم المحفظة*المبلغ# وأرسل التأكيد."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Save Action */}
-            <div className="flex items-center gap-3 pt-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-2">
               <button
                 type="submit"
                 disabled={savingPayment}
-                className="flex items-center gap-2 py-3 px-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 font-bold text-xs sm:text-sm text-white shadow-xl shadow-indigo-600/30 transition active:scale-95 disabled:opacity-50"
+                className="flex items-center justify-center gap-2 py-3.5 px-7 rounded-2xl bg-indigo-600 hover:bg-indigo-500 font-bold text-sm text-white shadow-xl shadow-indigo-600/30 transition active:scale-95 disabled:opacity-50"
               >
                 {saveSuccess ? <Check className="w-4 h-4 text-emerald-300" /> : <Save className="w-4 h-4" />}
-                <span>{saveSuccess ? 'تم حفظ وتحديث طرق الدفع بنجاح!' : 'حفظ إعدادات طرق الدفع'}</span>
+                <span>{saveSuccess ? 'تم حفظ وتفعيل طرق الدفع وربطها بالدول بنجاح!' : 'حفظ إعدادات طرق الدفع وتفعيلها'}</span>
               </button>
             </div>
           </form>
