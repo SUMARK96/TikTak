@@ -72,14 +72,20 @@ export const safeSetLocalStorage = (key: string, value: string) => {
   }
 };
 
-// Local data helpers
+// Local data helpers with legacy fallback detection
 export const getLocalOrganizers = (): Organizer[] => {
-  const saved = localStorage.getItem(ORGANIZERS_STORAGE_KEY);
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch {
-      // Fallback
+  const legacyKeys = [ORGANIZERS_STORAGE_KEY, 'tiktak_organizers_data_v2', 'tiktak_organizers_data'];
+  for (const key of legacyKeys) {
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {
+        // Continue
+      }
     }
   }
   safeSetLocalStorage(ORGANIZERS_STORAGE_KEY, JSON.stringify(INITIAL_ORGANIZERS));
@@ -92,12 +98,15 @@ export const setLocalOrganizers = (orgs: Organizer[]) => {
 };
 
 export const getCurrentOrganizerSession = (): Organizer | null => {
-  const saved = localStorage.getItem(CURRENT_ORGANIZER_KEY);
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch {
-      return null;
+  const legacyKeys = [CURRENT_ORGANIZER_KEY, 'tiktak_current_organizer_v2', 'tiktak_current_organizer'];
+  for (const key of legacyKeys) {
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // Continue
+      }
     }
   }
   return null;
@@ -113,12 +122,18 @@ export const setCurrentOrganizerSession = (organizer: Organizer | null) => {
 };
 
 export const getLocalEvents = (): EventItem[] => {
-  const saved = localStorage.getItem(EVENTS_STORAGE_KEY);
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch {
-      // Fallback
+  const legacyKeys = [EVENTS_STORAGE_KEY, 'tiktak_events_data_v2', 'tiktak_events_data', 'events_data'];
+  for (const key of legacyKeys) {
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {
+        // Continue
+      }
     }
   }
   safeSetLocalStorage(EVENTS_STORAGE_KEY, JSON.stringify(INITIAL_EVENTS));
@@ -131,12 +146,18 @@ export const setLocalEvents = (events: EventItem[]) => {
 };
 
 export const getLocalTickets = (): Ticket[] => {
-  const saved = localStorage.getItem(TICKETS_STORAGE_KEY);
-  if (saved) {
-    try {
-      return JSON.parse(saved);
-    } catch {
-      // Fallback
+  const legacyKeys = [TICKETS_STORAGE_KEY, 'tiktak_tickets_data_v2', 'tiktak_tickets_data'];
+  for (const key of legacyKeys) {
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {
+        // Continue
+      }
     }
   }
   safeSetLocalStorage(TICKETS_STORAGE_KEY, JSON.stringify(INITIAL_TICKETS));
@@ -252,7 +273,7 @@ export const setLocalScanLogs = (logs: ScanLogEntry[]) => {
 };
 
 export const dbService = {
-  // Realtime Subscription Helper
+  // Realtime Subscription Helper across Supabase and browser events
   subscribeToChanges(callback: () => void): () => void {
     const handler = () => callback();
     window.addEventListener('tiktak:datachange', handler);
@@ -280,10 +301,32 @@ export const dbService = {
 
   // ==================== ORGANIZER AUTH & PROFILE ====================
   async loginOrganizer(email: string, _password?: string): Promise<Organizer | null> {
+    const cleanEmail = email.trim().toLowerCase();
+    if (supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('organizers')
+          .select('*')
+          .ilike('email', cleanEmail)
+          .maybeSingle();
+
+        if (!error && data) {
+          setCurrentOrganizerSession(data as Organizer);
+          return data as Organizer;
+        }
+      } catch (e) {
+        console.warn('Supabase organizer login check warning:', e);
+      }
+    }
+
     const orgs = getLocalOrganizers();
-    const found = orgs.find((o) => o.email.toLowerCase() === email.toLowerCase());
+    const found = orgs.find((o) => o.email.toLowerCase() === cleanEmail);
     if (found) {
       setCurrentOrganizerSession(found);
+      // If found locally but missing in Supabase, upload it to cloud!
+      if (supabase) {
+        supabase.from('organizers').upsert([found]).then();
+      }
       return found;
     }
     return null;
@@ -299,10 +342,10 @@ export const dbService = {
     const orgs = getLocalOrganizers();
     const newOrganizer: Organizer = {
       id: 'org-' + Date.now().toString(36),
-      email: data.email,
-      name: data.name,
-      phone: data.phone,
-      organization_name: data.organization_name,
+      email: data.email.trim(),
+      name: data.name.trim(),
+      phone: data.phone.trim(),
+      organization_name: data.organization_name.trim(),
       logo_url: data.logo_url || '/logo.png',
       created_at: new Date().toISOString(),
       payment_methods: {
@@ -336,9 +379,11 @@ export const dbService = {
     setCurrentOrganizerSession(newOrganizer);
 
     if (supabase) {
-      Promise.resolve(supabase.from('organizers').insert([newOrganizer])).catch((err: unknown) => {
+      try {
+        await supabase.from('organizers').upsert([newOrganizer]);
+      } catch (err: unknown) {
         console.warn('Supabase organizer insert warning:', err);
-      });
+      }
     }
 
     return newOrganizer;
@@ -350,14 +395,15 @@ export const dbService = {
   ): Promise<Organizer | null> {
     const orgs = getLocalOrganizers();
     const idx = orgs.findIndex((o) => o.id === organizerId);
-    if (idx === -1) return null;
-
-    orgs[idx].payment_methods = methods;
-    setLocalOrganizers(orgs);
+    if (idx !== -1) {
+      orgs[idx].payment_methods = methods;
+      setLocalOrganizers(orgs);
+    }
 
     const currentSession = getCurrentOrganizerSession();
     if (currentSession && currentSession.id === organizerId) {
-      setCurrentOrganizerSession(orgs[idx]);
+      const updatedSession = { ...currentSession, payment_methods: methods };
+      setCurrentOrganizerSession(updatedSession);
     }
 
     if (supabase) {
@@ -368,10 +414,20 @@ export const dbService = {
       }
     }
 
-    return orgs[idx];
+    return idx !== -1 ? orgs[idx] : currentSession;
   },
 
   async getOrganizerById(organizerId: string): Promise<Organizer | null> {
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.from('organizers').select('*').eq('id', organizerId).maybeSingle();
+        if (!error && data) {
+          return data as Organizer;
+        }
+      } catch (e) {
+        console.warn('Fetch organizer from Supabase warning:', e);
+      }
+    }
     const orgs = getLocalOrganizers();
     return orgs.find((o) => o.id === organizerId) || null;
   },
@@ -431,6 +487,7 @@ export const dbService = {
                 status: ev.status,
                 payment_methods: ev.payment_methods,
                 featured: ev.featured || false,
+                created_at: ev.created_at || new Date().toISOString(),
               },
             ]);
             if (ev.ticket_tiers && ev.ticket_tiers.length > 0) {
@@ -550,13 +607,13 @@ export const dbService = {
     setLocalEvents(filtered);
 
     if (supabase) {
-      (async () => {
-        try {
-          await supabase.from('events').delete().eq('id', eventId);
-        } catch (e) {
-          console.warn('Supabase event delete warning:', e);
-        }
-      })();
+      try {
+        await supabase.from('ticket_tiers').delete().eq('event_id', eventId);
+        await supabase.from('tickets').delete().eq('event_id', eventId);
+        await supabase.from('events').delete().eq('id', eventId);
+      } catch (e) {
+        console.warn('Supabase event delete warning:', e);
+      }
     }
     return true;
   },
@@ -658,7 +715,7 @@ export const dbService = {
       created_at: new Date().toISOString(),
     };
 
-    // Update tickets count in event tier
+    // Update tickets count in event tier locally
     const currentEvents = getLocalEvents();
     const updatedEvents = currentEvents.map((evt) => {
       if (evt.id === event.id) {
@@ -681,31 +738,37 @@ export const dbService = {
     setLocalOrders([newOrder, ...currentOrders]);
 
     if (supabase) {
-      (async () => {
-        try {
-          await supabase.from('orders').insert([
-            {
-              id: newOrder.id,
-              event_id: newOrder.event_id,
-              organizer_id: newOrder.organizer_id,
-              buyer_name: newOrder.buyer_name,
-              buyer_email: newOrder.buyer_email,
-              buyer_phone: newOrder.buyer_phone,
-              total_price: newOrder.total_price,
-              platform_commission: newOrder.platform_commission,
-              organizer_net_payout: newOrder.organizer_net_payout,
-              commission_percentage: newOrder.commission_percentage,
-              ticket_count: newOrder.ticket_count,
-              payment_method: newOrder.payment_method,
-              payment_status: newOrder.payment_status,
-            },
-          ]);
+      try {
+        await supabase.from('orders').insert([
+          {
+            id: newOrder.id,
+            event_id: newOrder.event_id,
+            organizer_id: newOrder.organizer_id,
+            buyer_name: newOrder.buyer_name,
+            buyer_email: newOrder.buyer_email,
+            buyer_phone: newOrder.buyer_phone,
+            total_price: newOrder.total_price,
+            platform_commission: newOrder.platform_commission,
+            organizer_net_payout: newOrder.organizer_net_payout,
+            commission_percentage: newOrder.commission_percentage,
+            ticket_count: newOrder.ticket_count,
+            payment_method: newOrder.payment_method,
+            payment_reference: newOrder.payment_reference,
+            payment_status: newOrder.payment_status,
+            created_at: newOrder.created_at,
+          },
+        ]);
 
-          await supabase.from('tickets').insert(generatedTickets);
-        } catch (e) {
-          console.warn('Sync order to Supabase warning:', e);
-        }
-      })();
+        await supabase.from('tickets').insert(generatedTickets);
+
+        // Update sold count in Supabase ticket_tiers
+        await supabase
+          .from('ticket_tiers')
+          .update({ sold_count: (tier.sold_count || 0) + quantity })
+          .eq('id', tier.id);
+      } catch (e) {
+        console.warn('Sync order to Supabase warning:', e);
+      }
     }
 
     return { order: newOrder, tickets: generatedTickets };
@@ -721,15 +784,34 @@ export const dbService = {
     const now = new Date().toISOString();
 
     const tickets = getLocalTickets();
-    const ticketIndex = tickets.findIndex(
+    let ticketIndex = tickets.findIndex(
       (t) =>
         t.ticket_code.toLowerCase() === cleanCode.toLowerCase() ||
         (t.qr_data && t.qr_data.toLowerCase() === cleanCode.toLowerCase()) ||
         (cleanCode.includes(':') && cleanCode.split(':')[1]?.toLowerCase() === t.ticket_code.toLowerCase())
     );
 
-    if (ticketIndex === -1) {
-      this.addScanLog({
+    let ticket: Ticket | null = ticketIndex !== -1 ? tickets[ticketIndex] : null;
+
+    // If not found in local storage, query Supabase cloud!
+    if (!ticket && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('tickets')
+          .select('*')
+          .or(`ticket_code.ilike.${cleanCode},qr_data.ilike.%${cleanCode}%`)
+          .limit(1);
+
+        if (!error && data && data.length > 0) {
+          ticket = data[0] as Ticket;
+        }
+      } catch (err) {
+        console.warn('Supabase fetch ticket for scan warning:', err);
+      }
+    }
+
+    if (!ticket) {
+      await this.addScanLog({
         event_id: '',
         ticket_code: cleanCode,
         gate,
@@ -745,10 +827,8 @@ export const dbService = {
       };
     }
 
-    const ticket = tickets[ticketIndex];
-
     if (ticket.status === 'checked_in') {
-      this.addScanLog({
+      await this.addScanLog({
         event_id: ticket.event_id,
         ticket_id: ticket.id,
         ticket_code: ticket.ticket_code,
@@ -769,7 +849,7 @@ export const dbService = {
     }
 
     if (ticket.status === 'cancelled') {
-      this.addScanLog({
+      await this.addScanLog({
         event_id: ticket.event_id,
         ticket_id: ticket.id,
         ticket_code: ticket.ticket_code,
@@ -795,7 +875,7 @@ export const dbService = {
 
     if (isGateLocked && ticketGate !== '' && ticketGate.toLowerCase() !== gate.trim().toLowerCase()) {
       // Gate Mismatch: Keep ticket VALID and do NOT mark checked in!
-      this.addScanLog({
+      await this.addScanLog({
         event_id: ticket.event_id,
         ticket_id: ticket.id,
         ticket_code: ticket.ticket_code,
@@ -826,7 +906,11 @@ export const dbService = {
       gate_number: gate,
     };
 
-    tickets[ticketIndex] = updatedTicket;
+    if (ticketIndex !== -1) {
+      tickets[ticketIndex] = updatedTicket;
+    } else {
+      tickets.unshift(updatedTicket);
+    }
     setLocalTickets(tickets);
 
     // Update staff total scan count and last scan time
@@ -854,7 +938,7 @@ export const dbService = {
     }
 
     // Record successful scan log
-    this.addScanLog({
+    await this.addScanLog({
       event_id: ticket.event_id,
       ticket_id: ticket.id,
       ticket_code: ticket.ticket_code,
@@ -902,6 +986,13 @@ export const dbService = {
           safeSetLocalStorage(GATE_STAFF_STORAGE_KEY, JSON.stringify(data));
           return data as GateStaff[];
         }
+
+        // If cloud has 0 staff, seed INITIAL_GATE_STAFF to Supabase!
+        const local = getLocalGateStaff();
+        if (local.length > 0 && (!data || data.length === 0)) {
+          await supabase.from('gate_staff').upsert(local);
+          return local;
+        }
       } catch (e) {
         console.warn('Fetch gate staff from Supabase warning:', e);
       }
@@ -923,7 +1014,11 @@ export const dbService = {
     setLocalGateStaff([newStaff, ...current]);
 
     if (supabase) {
-      supabase.from('gate_staff').insert([newStaff]).then();
+      try {
+        await supabase.from('gate_staff').insert([newStaff]);
+      } catch (e) {
+        console.warn('Supabase add staff warning:', e);
+      }
     }
 
     return newStaff;
@@ -938,7 +1033,11 @@ export const dbService = {
     setLocalGateStaff(current);
 
     if (supabase) {
-      supabase.from('gate_staff').update(updates).eq('id', staffId).then();
+      try {
+        await supabase.from('gate_staff').update(updates).eq('id', staffId);
+      } catch (e) {
+        console.warn('Supabase update staff warning:', e);
+      }
     }
 
     return current[idx];
@@ -950,7 +1049,11 @@ export const dbService = {
     setLocalGateStaff(filtered);
 
     if (supabase) {
-      supabase.from('gate_staff').delete().eq('id', staffId).then();
+      try {
+        await supabase.from('gate_staff').delete().eq('id', staffId);
+      } catch (e) {
+        console.warn('Supabase delete staff warning:', e);
+      }
     }
 
     return true;
@@ -976,7 +1079,7 @@ export const dbService = {
     return all.filter((l) => l.event_id === eventId);
   },
 
-  addScanLog(logData: Omit<ScanLogEntry, 'id' | 'timestamp'>): ScanLogEntry {
+  async addScanLog(logData: Omit<ScanLogEntry, 'id' | 'timestamp'>): Promise<ScanLogEntry> {
     const newLog: ScanLogEntry = {
       ...logData,
       id: 'log-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 5),
@@ -987,7 +1090,11 @@ export const dbService = {
     setLocalScanLogs([newLog, ...current]);
 
     if (supabase) {
-      supabase.from('scan_logs').insert([newLog]).then();
+      try {
+        await supabase.from('scan_logs').insert([newLog]);
+      } catch (e) {
+        console.warn('Supabase add scan log warning:', e);
+      }
     }
 
     return newLog;
