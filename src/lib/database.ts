@@ -253,7 +253,7 @@ export const setLocalScanLogs = (logs: ScanLogEntry[]) => {
 
 export const dbService = {
   // Realtime Subscription Helper
-  subscribeToChanges(callback: () => void) {
+  subscribeToChanges(callback: () => void): () => void {
     const handler = () => callback();
     window.addEventListener('tiktak:datachange', handler);
     window.addEventListener('storage', handler);
@@ -262,9 +262,7 @@ export const dbService = {
     if (sb) {
       const channel = sb
         .channel('tiktak-realtime-feed')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => callback())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => callback())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, () => callback())
+        .on('postgres_changes', { event: '*', schema: 'public' }, () => callback())
         .subscribe();
 
       return () => {
@@ -388,7 +386,60 @@ export const dbService = {
           .order('created_at', { ascending: false });
 
         if (!error && data && data.length > 0) {
-          return data as EventItem[];
+          const eventsWithTiers: EventItem[] = data.map((d: any) => ({
+            ...d,
+            ticket_tiers: d.ticket_tiers || [],
+          }));
+          safeSetLocalStorage(EVENTS_STORAGE_KEY, JSON.stringify(eventsWithTiers));
+          return eventsWithTiers;
+        }
+
+        // If cloud database has 0 events, but local device has events (e.g. created on laptop), seed them to cloud!
+        const local = getLocalEvents();
+        if (local.length > 0 && (!data || data.length === 0)) {
+          for (const ev of local) {
+            await supabase.from('events').upsert([
+              {
+                id: ev.id,
+                organizer_id: ev.organizer_id,
+                organizer_name: ev.organizer_name,
+                title: ev.title,
+                tagline: ev.tagline,
+                description: ev.description,
+                category: ev.category,
+                country: ev.country,
+                currency: ev.currency,
+                currency_code: ev.currency_code,
+                venue_name: ev.venue_name,
+                city: ev.city,
+                address: ev.address,
+                start_date: ev.start_date,
+                end_date: ev.end_date,
+                sales_start_date: ev.sales_start_date,
+                sales_end_date: ev.sales_end_date,
+                logo_url: ev.logo_url,
+                banner_url: ev.banner_url,
+                card_image_zoom: ev.card_image_zoom,
+                card_image_position_y: ev.card_image_position_y,
+                ticket_bg_url: ev.ticket_bg_url,
+                ticket_image_height: ev.ticket_image_height,
+                ticket_image_fit: ev.ticket_image_fit,
+                ticket_image_position_y: ev.ticket_image_position_y,
+                ticket_image_zoom: ev.ticket_image_zoom,
+                ticket_theme: ev.ticket_theme,
+                total_capacity: ev.total_capacity,
+                status: ev.status,
+                payment_methods: ev.payment_methods,
+                featured: ev.featured || false,
+              },
+            ]);
+            if (ev.ticket_tiers && ev.ticket_tiers.length > 0) {
+              await supabase.from('ticket_tiers').upsert(
+                ev.ticket_tiers.map((t) => ({ ...t, event_id: ev.id }))
+              );
+            }
+          }
+          return local;
         }
       } catch (err) {
         console.warn('Supabase fetch failed, using local store:', err);
@@ -428,15 +479,29 @@ export const dbService = {
             tagline: newEvent.tagline,
             description: newEvent.description,
             category: newEvent.category,
+            country: newEvent.country,
+            currency: newEvent.currency,
+            currency_code: newEvent.currency_code,
             venue_name: newEvent.venue_name,
             city: newEvent.city,
             address: newEvent.address,
             start_date: newEvent.start_date,
             end_date: newEvent.end_date,
+            sales_start_date: newEvent.sales_start_date,
+            sales_end_date: newEvent.sales_end_date,
             logo_url: newEvent.logo_url,
             banner_url: newEvent.banner_url,
+            card_image_zoom: newEvent.card_image_zoom,
+            card_image_position_y: newEvent.card_image_position_y,
+            ticket_bg_url: newEvent.ticket_bg_url,
+            ticket_image_height: newEvent.ticket_image_height,
+            ticket_image_fit: newEvent.ticket_image_fit,
+            ticket_image_position_y: newEvent.ticket_image_position_y,
+            ticket_image_zoom: newEvent.ticket_image_zoom,
+            ticket_theme: newEvent.ticket_theme,
             total_capacity: newEvent.total_capacity,
             status: newEvent.status,
+            payment_methods: newEvent.payment_methods,
             featured: newEvent.featured || false,
           },
         ]);
@@ -608,7 +673,7 @@ export const dbService = {
     });
     setLocalEvents(updatedEvents);
 
-    // Save tickets & orders
+    // Save tickets & orders locally
     const currentTickets = getLocalTickets();
     setLocalTickets([...generatedTickets, ...currentTickets]);
 
@@ -776,6 +841,16 @@ export const dbService = {
         last_scan_at: now,
       };
       setLocalGateStaff(staffList);
+      if (supabase) {
+        supabase
+          .from('gate_staff')
+          .update({
+            total_scans_count: staffList[staffIndex].total_scans_count,
+            last_scan_at: now,
+          })
+          .eq('id', staffList[staffIndex].id)
+          .then();
+      }
     }
 
     // Record successful scan log
@@ -818,6 +893,19 @@ export const dbService = {
 
   // ==================== GATE STAFF MANAGEMENT ====================
   async getGateStaff(organizerId?: string): Promise<GateStaff[]> {
+    if (supabase) {
+      try {
+        let query = supabase.from('gate_staff').select('*');
+        if (organizerId) query = query.eq('organizer_id', organizerId);
+        const { data, error } = await query;
+        if (!error && data && data.length > 0) {
+          safeSetLocalStorage(GATE_STAFF_STORAGE_KEY, JSON.stringify(data));
+          return data as GateStaff[];
+        }
+      } catch (e) {
+        console.warn('Fetch gate staff from Supabase warning:', e);
+      }
+    }
     const all = getLocalGateStaff();
     if (!organizerId) return all;
     return all.filter((s) => s.organizer_id === organizerId);
@@ -833,6 +921,11 @@ export const dbService = {
 
     const current = getLocalGateStaff();
     setLocalGateStaff([newStaff, ...current]);
+
+    if (supabase) {
+      supabase.from('gate_staff').insert([newStaff]).then();
+    }
+
     return newStaff;
   },
 
@@ -843,6 +936,11 @@ export const dbService = {
 
     current[idx] = { ...current[idx], ...updates };
     setLocalGateStaff(current);
+
+    if (supabase) {
+      supabase.from('gate_staff').update(updates).eq('id', staffId).then();
+    }
+
     return current[idx];
   },
 
@@ -850,11 +948,29 @@ export const dbService = {
     const current = getLocalGateStaff();
     const filtered = current.filter((s) => s.id !== staffId);
     setLocalGateStaff(filtered);
+
+    if (supabase) {
+      supabase.from('gate_staff').delete().eq('id', staffId).then();
+    }
+
     return true;
   },
 
   // ==================== SCAN LOGS & REALTIME FEED ====================
   async getScanLogs(eventId?: string): Promise<ScanLogEntry[]> {
+    if (supabase) {
+      try {
+        let query = supabase.from('scan_logs').select('*').order('timestamp', { ascending: false }).limit(50);
+        if (eventId && eventId !== 'all') query = query.eq('event_id', eventId);
+        const { data, error } = await query;
+        if (!error && data) {
+          safeSetLocalStorage(SCAN_LOGS_STORAGE_KEY, JSON.stringify(data));
+          return data as ScanLogEntry[];
+        }
+      } catch (e) {
+        console.warn('Fetch scan logs from Supabase warning:', e);
+      }
+    }
     const all = getLocalScanLogs();
     if (!eventId || eventId === 'all') return all;
     return all.filter((l) => l.event_id === eventId);
@@ -869,16 +985,45 @@ export const dbService = {
 
     const current = getLocalScanLogs();
     setLocalScanLogs([newLog, ...current]);
+
+    if (supabase) {
+      supabase.from('scan_logs').insert([newLog]).then();
+    }
+
     return newLog;
   },
 
   // ==================== QUERIES ====================
   async getTicketsByEvent(eventId: string): Promise<Ticket[]> {
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.from('tickets').select('*').eq('event_id', eventId);
+        if (!error && data) {
+          return data as Ticket[];
+        }
+      } catch (e) {
+        console.warn('Fetch event tickets from Supabase warning:', e);
+      }
+    }
     const tickets = getLocalTickets();
     return tickets.filter((t) => t.event_id === eventId);
   },
 
   async getTicketsByOrganizer(organizerId: string): Promise<Ticket[]> {
+    if (supabase) {
+      try {
+        const events = await this.getEventsByOrganizer(organizerId);
+        const eventIds = events.map((e) => e.id);
+        if (eventIds.length > 0) {
+          const { data, error } = await supabase.from('tickets').select('*').in('event_id', eventIds);
+          if (!error && data) {
+            return data as Ticket[];
+          }
+        }
+      } catch (e) {
+        console.warn('Fetch organizer tickets from Supabase warning:', e);
+      }
+    }
     const events = await this.getEventsByOrganizer(organizerId);
     const eventIds = new Set(events.map((e) => e.id));
     const tickets = getLocalTickets();
@@ -886,11 +1031,34 @@ export const dbService = {
   },
 
   async getOrdersByOrganizer(organizerId: string): Promise<Order[]> {
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.from('orders').select('*').eq('organizer_id', organizerId);
+        if (!error && data) {
+          return data as Order[];
+        }
+      } catch (e) {
+        console.warn('Fetch organizer orders from Supabase warning:', e);
+      }
+    }
     const orders = getLocalOrders();
     return orders.filter((o) => o.organizer_id === organizerId);
   },
 
   async getMyTickets(emailOrPhone?: string): Promise<Ticket[]> {
+    if (supabase && emailOrPhone) {
+      try {
+        const { data, error } = await supabase
+          .from('tickets')
+          .select('*')
+          .or(`buyer_email.ilike.%${emailOrPhone}%,buyer_phone.ilike.%${emailOrPhone}%`);
+        if (!error && data) {
+          return data as Ticket[];
+        }
+      } catch (e) {
+        console.warn('Fetch my tickets from Supabase warning:', e);
+      }
+    }
     const all = getLocalTickets();
     if (!emailOrPhone) return all;
     return all.filter(

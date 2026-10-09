@@ -53,15 +53,21 @@ export const App: React.FC = () => {
   };
 
   // Load events
-  const loadEvents = async () => {
-    setLoading(true);
+  const loadEvents = async (silent = false) => {
+    if (!silent) setLoading(true);
     const data = await dbService.getEvents();
     setEvents(data);
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   useEffect(() => {
     loadEvents();
+    const unsubscribe = dbService.subscribeToChanges(() => {
+      loadEvents(true);
+    });
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const handleStartBooking = (event: EventItem) => {
