@@ -441,7 +441,7 @@ export const dbService = {
           .select('*, ticket_tiers(*)')
           .order('created_at', { ascending: false });
 
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           const eventsWithTiers: EventItem[] = data.map((d: any) => ({
             ...d,
             ticket_tiers: d.ticket_tiers || [],
@@ -449,60 +449,18 @@ export const dbService = {
           safeSetLocalStorage(EVENTS_STORAGE_KEY, JSON.stringify(eventsWithTiers));
           return eventsWithTiers;
         }
-
-        // If cloud database has 0 events, but local device has events (e.g. created on laptop), seed them to cloud!
-        const local = getLocalEvents();
-        if (local.length > 0 && (!data || data.length === 0)) {
-          for (const ev of local) {
-            await supabase.from('events').upsert([
-              {
-                id: ev.id,
-                organizer_id: ev.organizer_id,
-                organizer_name: ev.organizer_name,
-                title: ev.title,
-                tagline: ev.tagline,
-                description: ev.description,
-                category: ev.category,
-                country: ev.country,
-                currency: ev.currency,
-                currency_code: ev.currency_code,
-                venue_name: ev.venue_name,
-                city: ev.city,
-                address: ev.address,
-                start_date: ev.start_date,
-                end_date: ev.end_date,
-                sales_start_date: ev.sales_start_date,
-                sales_end_date: ev.sales_end_date,
-                logo_url: ev.logo_url,
-                banner_url: ev.banner_url,
-                card_image_zoom: ev.card_image_zoom,
-                card_image_position_y: ev.card_image_position_y,
-                ticket_bg_url: ev.ticket_bg_url,
-                ticket_image_height: ev.ticket_image_height,
-                ticket_image_fit: ev.ticket_image_fit,
-                ticket_image_position_y: ev.ticket_image_position_y,
-                ticket_image_zoom: ev.ticket_image_zoom,
-                ticket_theme: ev.ticket_theme,
-                total_capacity: ev.total_capacity,
-                status: ev.status,
-                payment_methods: ev.payment_methods,
-                featured: ev.featured || false,
-                created_at: ev.created_at || new Date().toISOString(),
-              },
-            ]);
-            if (ev.ticket_tiers && ev.ticket_tiers.length > 0) {
-              await supabase.from('ticket_tiers').upsert(
-                ev.ticket_tiers.map((t) => ({ ...t, event_id: ev.id }))
-              );
-            }
-          }
-          return local;
-        }
       } catch (err) {
         console.warn('Supabase fetch failed, using local store:', err);
       }
     }
-    return getLocalEvents();
+    const saved = localStorage.getItem(EVENTS_STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {}
+    }
+    return [];
   },
 
   async getEventsByOrganizer(organizerId: string): Promise<EventItem[]> {
