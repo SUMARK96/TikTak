@@ -75,18 +75,29 @@ export const TicketCard: React.FC<TicketCardProps> = ({ ticket, id, isCompact = 
         </div>
       )}
 
-      {/* Top Banner & Event Branding */}
-      <div className="relative h-32 w-full overflow-hidden bg-slate-800 z-10">
+      {/* Top Banner & Event Image Display */}
+      <div
+        className="relative w-full overflow-hidden bg-slate-950 z-10 transition-all"
+        style={{ height: `${ticket.ticket_image_height || 180}px` }}
+      >
         {ticket.event_banner || ticket.ticket_bg_url ? (
           <img
             src={ticket.ticket_bg_url || ticket.event_banner}
             alt={ticket.event_title}
-            className="w-full h-full object-cover opacity-60 filter brightness-90"
+            style={{
+              objectFit: ticket.ticket_image_fit || 'cover',
+              objectPosition: `center ${ticket.ticket_image_position_y ?? 50}%`,
+              transform:
+                ticket.ticket_image_zoom && ticket.ticket_image_zoom !== 100
+                  ? `scale(${ticket.ticket_image_zoom / 100})`
+                  : undefined,
+            }}
+            className="w-full h-full transition-transform duration-300 filter contrast-105"
           />
         ) : (
           <div className="w-full h-full bg-gradient-to-r from-indigo-900 via-purple-900 to-slate-900" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/40 pointer-events-none" />
 
         {/* Tier & Status Badges */}
         <div className="absolute top-3 right-3 left-3 flex items-center justify-between z-10">
@@ -119,8 +130,8 @@ export const TicketCard: React.FC<TicketCardProps> = ({ ticket, id, isCompact = 
         </div>
 
         {/* Event Logo Avatar */}
-        <div className="absolute -bottom-6 right-6 z-10">
-          <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-indigo-500/50 shadow-xl bg-slate-900 p-1 flex items-center justify-center">
+        <div className="absolute -bottom-5 right-5 z-10">
+          <div className="w-13 h-13 rounded-2xl overflow-hidden border-2 border-indigo-500/50 shadow-xl bg-slate-900 p-1 flex items-center justify-center">
             <img
               src={ticket.event_logo || '/logo.png'}
               alt="Event Logo"
@@ -130,17 +141,32 @@ export const TicketCard: React.FC<TicketCardProps> = ({ ticket, id, isCompact = 
         </div>
       </div>
 
-      {/* Main Details Body */}
-      <div className="p-6 pt-8 space-y-4 relative z-10">
+      {/* Main Details Body (Under Event Image) */}
+      <div className="p-5 pt-7 space-y-3 relative z-10">
         <div>
           <h3 className="text-xl font-black text-white leading-snug tracking-wide">
             {ticket.event_title}
           </h3>
-          <p className="text-xs text-indigo-300/80 font-medium mt-0.5 flex items-center gap-1">
+          <p className="text-xs text-indigo-300/80 font-medium mt-1 flex items-center gap-1">
             <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
             تذكرة موثقة عبر تيك تاك - TikTak Verified
           </p>
         </div>
+
+        {(ticket.event_date || ticket.event_venue) && (
+          <div className="flex flex-wrap items-center justify-between text-xs text-slate-300 bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/40 gap-2">
+            {ticket.event_date && (
+              <span className="font-semibold text-slate-200">
+                📅 {new Date(ticket.event_date).toLocaleDateString('ar-SA')}
+              </span>
+            )}
+            {ticket.event_venue && (
+              <span className="text-slate-400 text-[11px] truncate max-w-[200px]">
+                📍 {ticket.event_venue}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Perforated Separator with Side Notches */}

@@ -66,7 +66,15 @@ export interface EventItem {
   end_date: string;
   logo_url: string;
   banner_url: string;
+  // Event Card Image Adjustments
+  card_image_zoom?: number;
+  card_image_position_y?: number;
+  // Ticket Image & Layout Adjustments
   ticket_bg_url?: string;
+  ticket_image_height?: number;
+  ticket_image_fit?: 'cover' | 'contain';
+  ticket_image_position_y?: number;
+  ticket_image_zoom?: number;
   ticket_theme?: TicketDesignTheme;
   total_capacity: number;
   status: 'published' | 'draft' | 'ended' | 'paused';
@@ -94,7 +102,12 @@ export interface Ticket {
   event_venue: string;
   event_logo: string;
   event_banner?: string;
+  // Ticket Image & Layout Adjustments
   ticket_bg_url?: string;
+  ticket_image_height?: number;
+  ticket_image_fit?: 'cover' | 'contain';
+  ticket_image_position_y?: number;
+  ticket_image_zoom?: number;
   ticket_theme?: TicketDesignTheme;
   buyer_name: string;
   buyer_email: string;

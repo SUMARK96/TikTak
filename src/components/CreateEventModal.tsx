@@ -20,7 +20,11 @@ import {
   Building,
   Smartphone,
   CheckCircle2,
-  ShieldCheck
+  ShieldCheck,
+  Sliders,
+  ZoomIn,
+  Move,
+  Maximize2
 } from 'lucide-react';
 import { EventItem, TicketTier, TicketDesignTheme } from '../types';
 import { dbService, getCurrentOrganizerSession } from '../lib/database';
@@ -68,6 +72,16 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   // Event Cover & Logo Images
   const [bannerUrl, setBannerUrl] = useState('https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&auto=format&fit=crop&q=80');
   const [logoUrl, setLogoUrl] = useState(currentOrganizer?.logo_url || '/logo.png');
+
+  // Event Card Image Adjustments (موضع وتقريب صورة بطاقة الفعالية)
+  const [cardImageZoom, setCardImageZoom] = useState(100);
+  const [cardImagePosY, setCardImagePosY] = useState(50);
+
+  // Ticket Image & Visual Layout Adjustments (موضع وحجم صورة التذكرة)
+  const [ticketImageHeight, setTicketImageHeight] = useState(180);
+  const [ticketImageFit, setTicketImageFit] = useState<'cover' | 'contain'>('cover');
+  const [ticketImagePosY, setTicketImagePosY] = useState(50);
+  const [ticketImageZoom, setTicketImageZoom] = useState(100);
 
   // AI Ticket Design State (Optional)
   const [enableAiDesign, setEnableAiDesign] = useState(false);
@@ -255,7 +269,13 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
         sales_end_date: salesEndDate ? new Date(salesEndDate).toISOString() : undefined,
         logo_url: logoUrl || '/logo.png',
         banner_url: bannerUrl,
-        ticket_bg_url: enableAiDesign ? (ticketBgUrl || bannerUrl) : undefined,
+        card_image_zoom: cardImageZoom,
+        card_image_position_y: cardImagePosY,
+        ticket_bg_url: enableAiDesign ? (ticketBgUrl || bannerUrl) : bannerUrl,
+        ticket_image_height: ticketImageHeight,
+        ticket_image_fit: ticketImageFit,
+        ticket_image_position_y: ticketImagePosY,
+        ticket_image_zoom: ticketImageZoom,
         ticket_theme: enableAiDesign ? ticketTheme : 'modern_dark',
         total_capacity: totalCap,
         status: 'published',
@@ -300,7 +320,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     }
   };
 
-  // Sample Ticket Preview for AI theme visualizer
+  // Sample Ticket Preview for AI theme visualizer and design adjuster
   const sampleTicketPreview = {
     id: 'sample-preview-ticket',
     ticket_code: 'TIK-892147-VIP',
@@ -313,7 +333,11 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     event_venue: `${venueName || 'اسم القاعة أو المركز'}, ${city}`,
     event_logo: logoUrl || '/logo.png',
     event_banner: bannerUrl,
-    ticket_bg_url: enableAiDesign ? (ticketBgUrl || bannerUrl) : undefined,
+    ticket_bg_url: enableAiDesign ? (ticketBgUrl || bannerUrl) : bannerUrl,
+    ticket_image_height: ticketImageHeight,
+    ticket_image_fit: ticketImageFit,
+    ticket_image_position_y: ticketImagePosY,
+    ticket_image_zoom: ticketImageZoom,
     ticket_theme: enableAiDesign ? ticketTheme : 'modern_dark',
     buyer_name: 'سلطان فهد الراجحي',
     buyer_email: 'buyer@example.com',
@@ -464,24 +488,35 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 </div>
               </div>
 
-              {/* Cover Image Upload (غلاف الفعالية) */}
-              <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/80 space-y-3">
+              {/* Cover Image Upload & Fine-Tuning (غلاف الفعالية والتحكم بالصورة) */}
+              <div className="bg-slate-800/60 p-4 rounded-2xl border border-slate-700/80 space-y-4">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs font-bold text-white flex items-center gap-2">
                     <ImageIcon className="w-4 h-4 text-indigo-400" />
                     <span>صورة غلاف الفعالية (تظهر في بطاقة الفعالية بالصفحة الرئيسية):</span>
                   </label>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold border border-indigo-500/30">
+                    قابلة للتعديل والتحريك ✨
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-                  <div className="sm:col-span-5 relative h-32 rounded-xl overflow-hidden bg-slate-900 border border-slate-700">
-                    <img src={bannerUrl} alt="Cover Preview" className="w-full h-full object-cover" />
-                    <span className="absolute bottom-1 right-1 px-2 py-0.5 rounded bg-slate-950/80 text-[10px] text-slate-300">
-                      معاينة الغلاف
+                  <div className="sm:col-span-5 relative h-36 rounded-2xl overflow-hidden bg-slate-900 border border-slate-700 shadow-inner">
+                    <img
+                      src={bannerUrl}
+                      alt="Cover Preview"
+                      style={{
+                        objectPosition: `center ${cardImagePosY}%`,
+                        transform: cardImageZoom !== 100 ? `scale(${cardImageZoom / 100})` : undefined,
+                      }}
+                      className="w-full h-full object-cover transition-all duration-200"
+                    />
+                    <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-slate-950/80 text-[10px] text-slate-300 backdrop-blur-sm border border-slate-800">
+                      معاينة البطاقة ({cardImagePosY}%)
                     </span>
                   </div>
 
-                  <div className="sm:col-span-7 space-y-2">
+                  <div className="sm:col-span-7 space-y-2.5">
                     <div>
                       <label className="block text-[11px] text-slate-400 mb-1">رفع صورة من جهازك:</label>
                       <input
@@ -500,6 +535,71 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                         placeholder="https://images.unsplash.com/..."
                         className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white"
                       />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cover Image Adjustment Sliders */}
+                <div className="bg-slate-900/90 p-3.5 rounded-2xl border border-slate-700/60 space-y-3">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+                    <span className="flex items-center gap-1.5">
+                      <Move className="w-3.5 h-3.5 text-indigo-400" />
+                      ضبط موضع وتكبير الصورة في بطاقة الفعالية:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCardImagePosY(50);
+                        setCardImageZoom(100);
+                      }}
+                      className="text-[10px] text-indigo-400 hover:underline"
+                    >
+                      إعادة ضبط
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    {/* Position Y */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[11px] text-slate-400">
+                        <span>موضع الصورة عمودياً:</span>
+                        <span className="font-mono text-indigo-300 font-bold">{cardImagePosY}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={cardImagePosY}
+                        onChange={(e) => setCardImagePosY(Number(e.target.value))}
+                        className="w-full accent-indigo-500 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-500">
+                        <button type="button" onClick={() => setCardImagePosY(15)} className="hover:text-slate-300">أعلى (15%)</button>
+                        <button type="button" onClick={() => setCardImagePosY(50)} className="hover:text-slate-300">وسط (50%)</button>
+                        <button type="button" onClick={() => setCardImagePosY(85)} className="hover:text-slate-300">أسفل (85%)</button>
+                      </div>
+                    </div>
+
+                    {/* Zoom */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-[11px] text-slate-400">
+                        <span>حجم وتقريب الصورة (Zoom):</span>
+                        <span className="font-mono text-indigo-300 font-bold">{cardImageZoom}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="100"
+                        max="160"
+                        step="5"
+                        value={cardImageZoom}
+                        onChange={(e) => setCardImageZoom(Number(e.target.value))}
+                        className="w-full accent-indigo-500 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-500">
+                        <button type="button" onClick={() => setCardImageZoom(100)} className="hover:text-slate-300">طبيعي (100%)</button>
+                        <button type="button" onClick={() => setCardImageZoom(120)} className="hover:text-slate-300">تكبير (120%)</button>
+                        <button type="button" onClick={() => setCardImageZoom(150)} className="hover:text-slate-300">أقصى (150%)</button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -625,9 +725,167 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
             </div>
           )}
 
-          {/* ======================= TAB 2: OPTIONAL AI TICKET DESIGN ======================= */}
+          {/* ======================= TAB 2: TICKET DESIGN & CUSTOMIZATION ======================= */}
           {activeTab === 'design' && (
-            <div className="space-y-5">
+            <div className="space-y-6">
+              {/* Ticket Image & Layout Customization */}
+              <div className="p-5 rounded-2xl bg-slate-900 border border-slate-700/80 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                      <Sliders className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-white text-sm">
+                        تخصيص أبعاد وموضع صورة التذكرة
+                      </h3>
+                      <p className="text-[11px] text-slate-400">
+                        تحمل التذكرة صورة الفعالية في الأعلى ورمز الـ QR مباشرة أسفل الصورة
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sliders and Fit Toggles */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Height control */}
+                  <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-300 font-semibold">ارتفاع مساحة الصورة:</span>
+                      <span className="text-amber-400 font-mono font-bold">{ticketImageHeight}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="120"
+                      max="320"
+                      step="10"
+                      value={ticketImageHeight}
+                      onChange={(e) => setTicketImageHeight(Number(e.target.value))}
+                      className="w-full accent-amber-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[10px] text-slate-500">
+                      <span>مدمج (120px)</span>
+                      <span>متوسط (200px)</span>
+                      <span>عريض/كامل (320px)</span>
+                    </div>
+                  </div>
+
+                  {/* Fit mode */}
+                  <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                    <span className="text-slate-300 font-semibold text-xs block">طريقة عرض الصورة بالتذكرة:</span>
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setTicketImageFit('cover')}
+                        className={`py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                          ticketImageFit === 'cover'
+                            ? 'bg-amber-500 text-slate-950 shadow-md'
+                            : 'bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <span>ملء الإطار (Cover)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTicketImageFit('contain')}
+                        className={`py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                          ticketImageFit === 'contain'
+                            ? 'bg-amber-500 text-slate-950 shadow-md'
+                            : 'bg-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <span>إظهار الصورة كاملة (Contain)</span>
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      {ticketImageFit === 'contain' ? '✓ تظهر الصورة بالكامل دون أي اقتصاص لحوافها' : '✓ تملأ الصورة كامل العرض بارتفاع متناسق'}
+                    </p>
+                  </div>
+
+                  {/* Vertical Position */}
+                  <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-300 font-semibold">المحاذاة الرأسية للصورة:</span>
+                      <span className="text-amber-400 font-mono font-bold">{ticketImagePosY}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value={ticketImagePosY}
+                      onChange={(e) => setTicketImagePosY(Number(e.target.value))}
+                      className="w-full accent-amber-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[10px] text-slate-500">
+                      <span>الأعلى (0%)</span>
+                      <span>الوسط (50%)</span>
+                      <span>الأسفل (100%)</span>
+                    </div>
+                  </div>
+
+                  {/* Zoom */}
+                  <div className="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-slate-300 font-semibold">مستوى التكبير (Zoom):</span>
+                      <span className="text-amber-400 font-mono font-bold">{ticketImageZoom}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="100"
+                      max="160"
+                      step="5"
+                      value={ticketImageZoom}
+                      onChange={(e) => setTicketImageZoom(Number(e.target.value))}
+                      className="w-full accent-amber-500 bg-slate-800 h-2 rounded-lg cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[10px] text-slate-500">
+                      <span>طبيعي 100%</span>
+                      <span>130%</span>
+                      <span>160%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Theme Styling */}
+              <div className="space-y-3">
+                <label className="block text-xs font-bold text-slate-200">
+                  اختر نمط ولون التذكرة المعتمد:
+                </label>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {[
+                    { id: 'royal_gold', name: '🏆 الملكي الذهبي', desc: 'أناقة ذهبية للمؤتمرات', color: 'border-amber-500/50 bg-amber-950/20' },
+                    { id: 'neon_cyber', name: '⚡ النيوني التقني', desc: 'مظهر سايبر لفعاليات التقنية', color: 'border-cyan-500/50 bg-cyan-950/20' },
+                    { id: 'festive_hologram', name: '🌌 الاحتفالي الهولوجرامي', desc: 'تدرجات بنفسجية وردية للحفلات', color: 'border-pink-500/50 bg-pink-950/20' },
+                    { id: 'arabic_heritage', name: '🌿 التراثي الأصيل', desc: 'طابع زمردي راقي للفعاليات الثقافية', color: 'border-emerald-500/50 bg-emerald-950/20' },
+                    { id: 'modern_dark', name: '💎 العصري الأنيق', desc: 'النمط الكلاسيكي لمنصة تيك تاك', color: 'border-indigo-500/50 bg-indigo-950/20' },
+                  ].map((themeOpt) => {
+                    const isSelected = ticketTheme === themeOpt.id;
+                    return (
+                      <div
+                        key={themeOpt.id}
+                        onClick={() => setTicketTheme(themeOpt.id as TicketDesignTheme)}
+                        className={`p-3 rounded-2xl border transition cursor-pointer relative flex flex-col justify-between ${themeOpt.color} ${
+                          isSelected
+                            ? 'ring-2 ring-indigo-500 border-indigo-400 shadow-lg'
+                            : 'opacity-80 hover:opacity-100'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs text-white">{themeOpt.name}</span>
+                            {isSelected && <Check className="w-4 h-4 text-emerald-400" />}
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1">{themeOpt.desc}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Optional AI Design Toggle */}
               <div className="p-4 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -654,19 +912,6 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
                 </label>
               </div>
-
-              {/* If AI Design is disabled */}
-              {!enableAiDesign && (
-                <div className="p-6 rounded-3xl bg-slate-950 border border-slate-800 text-center space-y-3">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-800 mx-auto flex items-center justify-center text-slate-400">
-                    <Sparkles className="w-6 h-6" />
-                  </div>
-                  <div className="font-bold text-white text-sm">القالب الرسمي المعتمد للتذاكر مفعّل</div>
-                  <p className="text-xs text-slate-400 max-w-md mx-auto">
-                    سيتم إصدار التذاكر بالقالب القياسي الأنيق لمنصة تيك تاك مع شعار الفعالية ورمز QR وتفاصيل المقعد والعملة ({countryConfig.currency}).
-                  </p>
-                </div>
-              )}
 
               {/* If AI Design is enabled */}
               {enableAiDesign && (
@@ -714,44 +959,6 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                       </div>
                     </div>
                   </div>
-
-                  {/* AI Generated Styles */}
-                  <div className="space-y-3">
-                    <label className="block text-xs font-bold text-slate-200">
-                      اختر نمط التذكرة المقترح:
-                    </label>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                      {[
-                        { id: 'royal_gold', name: '🏆 الملكي الذهبي', desc: 'أناقة ذهبية للمؤتمرات', color: 'border-amber-500/50 bg-amber-950/20' },
-                        { id: 'neon_cyber', name: '⚡ النيوني التقني', desc: 'مظهر سايبر لفعاليات التقنية', color: 'border-cyan-500/50 bg-cyan-950/20' },
-                        { id: 'festive_hologram', name: '🌌 الاحتفالي الهولوجرامي', desc: 'تدرجات بنفسجية وردية للحفلات', color: 'border-pink-500/50 bg-pink-950/20' },
-                        { id: 'arabic_heritage', name: '🌿 التراثي الأصيل', desc: 'طابع زمردي راقي للفعاليات الثقافية', color: 'border-emerald-500/50 bg-emerald-950/20' },
-                        { id: 'modern_dark', name: '💎 العصري الأنيق', desc: 'النمط الكلاسيكي لمنصة تيك تاك', color: 'border-indigo-500/50 bg-indigo-950/20' },
-                      ].map((themeOpt) => {
-                        const isSelected = ticketTheme === themeOpt.id;
-                        return (
-                          <div
-                            key={themeOpt.id}
-                            onClick={() => setTicketTheme(themeOpt.id as TicketDesignTheme)}
-                            className={`p-3 rounded-2xl border transition cursor-pointer relative flex flex-col justify-between ${themeOpt.color} ${
-                              isSelected
-                                ? 'ring-2 ring-indigo-500 border-indigo-400 shadow-lg'
-                                : 'opacity-80 hover:opacity-100'
-                            }`}
-                          >
-                            <div>
-                              <div className="flex items-center justify-between">
-                                <span className="font-bold text-xs text-white">{themeOpt.name}</span>
-                                {isSelected && <Check className="w-4 h-4 text-emerald-400" />}
-                              </div>
-                              <p className="text-[10px] text-slate-400 mt-1">{themeOpt.desc}</p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
                 </div>
               )}
 
@@ -760,14 +967,14 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 <div className="flex items-center justify-between text-xs font-bold text-slate-300">
                   <span className="flex items-center gap-1.5">
                     <Eye className="w-4 h-4 text-indigo-400" />
-                    معاينة حية لشكل التذكرة الإلكترونية ({countryConfig.currency}):
+                    معاينة حية لشكل التذكرة الإلكترونية النهائية:
                   </span>
                   <span className="text-[11px] text-indigo-400">
                     العملة: {countryConfig.currency}
                   </span>
                 </div>
 
-                <div className="flex justify-center scale-[0.85] -my-6 sm:scale-100 sm:my-0">
+                <div className="flex justify-center scale-[0.88] -my-4 sm:scale-100 sm:my-0">
                   <TicketCard ticket={sampleTicketPreview} isCompact={true} />
                 </div>
               </div>

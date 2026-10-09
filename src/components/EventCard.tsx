@@ -49,6 +49,13 @@ export const EventCard: React.FC<EventCardProps> = ({ event, onBook, onSelect })
         <img
           src={event.banner_url}
           alt={event.title}
+          style={{
+            objectPosition: `center ${event.card_image_position_y ?? 50}%`,
+            transform:
+              event.card_image_zoom && event.card_image_zoom !== 100
+                ? `scale(${event.card_image_zoom / 100})`
+                : undefined,
+          }}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent" />
