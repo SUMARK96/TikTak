@@ -2,13 +2,13 @@ import { EventItem, GateStaff, Order, Organizer, OrganizerPaymentMethods, ScanLo
 import { INITIAL_EVENTS, INITIAL_ORGANIZERS, INITIAL_TICKETS } from './mockData';
 import { supabase } from './supabase';
 
-const EVENTS_STORAGE_KEY = 'tiktak_events_data_v2';
-const TICKETS_STORAGE_KEY = 'tiktak_tickets_data_v2';
-const ORDERS_STORAGE_KEY = 'tiktak_orders_data_v2';
-const ORGANIZERS_STORAGE_KEY = 'tiktak_organizers_data_v2';
-const CURRENT_ORGANIZER_KEY = 'tiktak_current_organizer_v2';
-const GATE_STAFF_STORAGE_KEY = 'tiktak_gate_staff_v2';
-const SCAN_LOGS_STORAGE_KEY = 'tiktak_scan_logs_v2';
+const EVENTS_STORAGE_KEY = 'tiktak_events_data_v3';
+const TICKETS_STORAGE_KEY = 'tiktak_tickets_data_v3';
+const ORDERS_STORAGE_KEY = 'tiktak_orders_data_v3';
+const ORGANIZERS_STORAGE_KEY = 'tiktak_organizers_data_v3';
+const CURRENT_ORGANIZER_KEY = 'tiktak_current_organizer_v3';
+const GATE_STAFF_STORAGE_KEY = 'tiktak_gate_staff_v3';
+const SCAN_LOGS_STORAGE_KEY = 'tiktak_scan_logs_v3';
 
 export const PLATFORM_FEE_PERCENTAGE = 5.0; // 5% platform commission
 
