@@ -1,6 +1,6 @@
 import React from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { User, CheckCircle2, AlertCircle, ShieldCheck, Tag } from 'lucide-react';
+import { CheckCircle2, AlertCircle, ShieldCheck, Tag } from 'lucide-react';
 import { Ticket, TicketDesignTheme } from '../types';
 
 interface TicketCardProps {
@@ -140,29 +140,6 @@ export const TicketCard: React.FC<TicketCardProps> = ({ ticket, id, isCompact = 
             <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
             تذكرة موثقة عبر تيك تاك - TikTak Verified
           </p>
-        </div>
-
-        {/* Buyer & Gate Info Grid */}
-        <div className="grid grid-cols-1 gap-2.5 bg-slate-800/60 p-3.5 rounded-2xl border border-slate-700/40 text-xs backdrop-blur-sm">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <User className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="font-bold text-white text-sm">{ticket.buyer_name}</span>
-            </div>
-            <span className="text-indigo-300 font-bold text-sm">
-              {ticket.price > 0 ? `${ticket.price} ${ticket.currency || 'ر.س'}` : 'مجانية'}
-            </span>
-          </div>
-
-          {/* Gate Assignment Badge if specific gate assigned */}
-          {ticket.gate && (
-            <div className="flex items-center justify-between border-t border-slate-700/30 pt-2 text-xs">
-              <span className="text-slate-400">بوابة الدخول المخصصة:</span>
-              <span className="font-bold text-emerald-400 px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
-                🚪 {ticket.gate}
-              </span>
-            </div>
-          )}
         </div>
       </div>
 
