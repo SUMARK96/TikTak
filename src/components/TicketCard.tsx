@@ -129,16 +129,18 @@ export const TicketCard: React.FC<TicketCardProps> = ({ ticket, id, isCompact = 
           )}
         </div>
 
-        {/* Event Logo Avatar */}
-        <div className="absolute -bottom-5 right-5 z-10">
-          <div className="w-13 h-13 rounded-2xl overflow-hidden border-2 border-indigo-500/50 shadow-xl bg-slate-900 p-1 flex items-center justify-center">
-            <img
-              src={ticket.event_logo || '/logo.png'}
-              alt="Event Logo"
-              className="w-full h-full object-contain"
-            />
+        {/* Event Custom Logo (Only if a custom event logo is provided and not the platform logo) */}
+        {ticket.event_logo && !ticket.event_logo.includes('logo.png') && (
+          <div className="absolute -bottom-5 right-5 z-10">
+            <div className="w-12 h-12 rounded-2xl overflow-hidden border-2 border-indigo-500/50 shadow-xl bg-slate-900 p-1 flex items-center justify-center">
+              <img
+                src={ticket.event_logo}
+                alt="Event Logo"
+                className="w-full h-full object-contain"
+              />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Main Details Body (Under Event Image) */}

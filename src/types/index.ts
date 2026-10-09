@@ -64,7 +64,7 @@ export interface EventItem {
   address?: string;
   start_date: string;
   end_date: string;
-  logo_url: string;
+  logo_url?: string;
   banner_url: string;
   // Event Card Image Adjustments
   card_image_zoom?: number;
@@ -100,7 +100,7 @@ export interface Ticket {
   event_title: string;
   event_date: string;
   event_venue: string;
-  event_logo: string;
+  event_logo?: string;
   event_banner?: string;
   // Ticket Image & Layout Adjustments
   ticket_bg_url?: string;

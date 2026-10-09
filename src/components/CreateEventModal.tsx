@@ -71,7 +71,11 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   
   // Event Cover & Logo Images
   const [bannerUrl, setBannerUrl] = useState('https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&auto=format&fit=crop&q=80');
-  const [logoUrl, setLogoUrl] = useState(currentOrganizer?.logo_url || '/logo.png');
+  const [logoUrl, setLogoUrl] = useState(
+    currentOrganizer?.logo_url && !currentOrganizer.logo_url.includes('logo.png')
+      ? currentOrganizer.logo_url
+      : ''
+  );
 
   // Event Card Image Adjustments (موضع وتقريب صورة بطاقة الفعالية)
   const [cardImageZoom, setCardImageZoom] = useState(100);
@@ -267,7 +271,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
         end_date: new Date(endDate).toISOString(),
         sales_start_date: salesStartDate ? new Date(salesStartDate).toISOString() : undefined,
         sales_end_date: salesEndDate ? new Date(salesEndDate).toISOString() : undefined,
-        logo_url: logoUrl || '/logo.png',
+        logo_url: logoUrl || undefined,
         banner_url: bannerUrl,
         card_image_zoom: cardImageZoom,
         card_image_position_y: cardImagePosY,
@@ -331,7 +335,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     event_title: title || 'اسم الفعالية هنا',
     event_date: startDate ? new Date(startDate).toISOString() : new Date().toISOString(),
     event_venue: `${venueName || 'اسم القاعة أو المركز'}, ${city}`,
-    event_logo: logoUrl || '/logo.png',
+    event_logo: logoUrl && !logoUrl.includes('logo.png') ? logoUrl : undefined,
     event_banner: bannerUrl,
     ticket_bg_url: enableAiDesign ? (ticketBgUrl || bannerUrl) : bannerUrl,
     ticket_image_height: ticketImageHeight,
