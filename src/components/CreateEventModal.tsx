@@ -221,56 +221,85 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     setTiers(updated);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title || !venueName) return;
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
 
-    // Check if at least one payment method is enabled
+    // 1. Validate Event Title
+    if (!title.trim()) {
+      alert('يرجى إدخال اسم / عنوان الفعالية أولاً في تبويب «تفاصيل الفعالية».');
+      setActiveTab('info');
+      return;
+    }
+
+    // 2. Validate Venue
+    if (!venueName.trim()) {
+      alert('يرجى إدخال اسم المكان / القاعة في تبويب «تفاصيل الفعالية».');
+      setActiveTab('info');
+      return;
+    }
+
+    // 3. Validate Tiers
+    if (!tiers || tiers.length === 0) {
+      alert('يرجى إضافة فئة تذاكر واحدة على الأقل في تبويب «فئات التذاكر».');
+      setActiveTab('tickets');
+      return;
+    }
+
+    // 4. Check if at least one payment method is enabled
     const hasAnyPayment =
       eventPaymentMethods.stripe.enabled ||
       eventPaymentMethods.bankak.enabled ||
       eventPaymentMethods.vodafone_cash.enabled;
 
     if (!hasAnyPayment) {
-      alert('يرجى تفعيل وسيلة دفع واحدة على الأقل في تبويب (طرق الدفع والتحصيل) لتتمكن من بيع التذاكر للجمهور.');
+      alert('يرجى تفعيل وسيلة دفع واحدة على الأقل في تبويب «طرق الدفع والتحصيل» لتتمكن من بيع التذاكر للجمهور.');
       setActiveTab('payments');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const totalCap = tiers.reduce((acc, t) => acc + Number(t.capacity), 0);
+      const totalCap = tiers.reduce((acc, t) => acc + (Number(t.capacity) || 0), 0);
 
       const cleanedTiers: TicketTier[] = tiers.map((t, idx) => ({
         id: `tier-${idx}`,
         event_id: '',
-        name: t.name,
-        price: Number(t.price),
-        capacity: Number(t.capacity),
+        name: t.name || `فئة ${idx + 1}`,
+        price: Number(t.price) || 0,
+        capacity: Number(t.capacity) || 100,
         sold_count: 0,
-        perks: t.perks,
+        perks: t.perks || [],
         color_hex: t.color_hex,
-        is_active: t.is_active,
+        is_active: t.is_active ?? true,
         gate: t.hasCustomGate ? t.gate : undefined,
       }));
 
+      const parseSafeDate = (val: string, fallbackHours = 0) => {
+        try {
+          const d = val ? new Date(val) : new Date(Date.now() + fallbackHours * 3600000);
+          return isNaN(d.getTime()) ? new Date(Date.now() + fallbackHours * 3600000).toISOString() : d.toISOString();
+        } catch {
+          return new Date(Date.now() + fallbackHours * 3600000).toISOString();
+        }
+      };
+
       const created = await dbService.createEvent({
         organizer_id: currentOrganizer?.id || ('org-' + Date.now().toString(36)),
-        organizer_name: organizerName,
-        title,
-        tagline,
-        description,
+        organizer_name: organizerName || currentOrganizer?.organization_name || 'المنظم',
+        title: title.trim(),
+        tagline: tagline.trim(),
+        description: description.trim(),
         category,
         country: countryConfig.name,
         currency: countryConfig.currency,
         currency_code: countryConfig.currencyCode,
-        venue_name: venueName,
-        city,
-        address,
-        start_date: new Date(startDate).toISOString(),
-        end_date: new Date(endDate).toISOString(),
-        sales_start_date: salesStartDate ? new Date(salesStartDate).toISOString() : undefined,
-        sales_end_date: salesEndDate ? new Date(salesEndDate).toISOString() : undefined,
+        venue_name: venueName.trim(),
+        city: city.trim() || 'الرياض',
+        address: address.trim(),
+        start_date: parseSafeDate(startDate, 24),
+        end_date: parseSafeDate(endDate, 28),
+        sales_start_date: salesStartDate ? parseSafeDate(salesStartDate, 0) : undefined,
+        sales_end_date: salesEndDate ? parseSafeDate(salesEndDate, 720) : undefined,
         logo_url: logoUrl || undefined,
         banner_url: bannerUrl,
         card_image_zoom: cardImageZoom,
@@ -320,6 +349,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
       onClose();
     } catch (err) {
       console.error('Failed to create event:', err);
+      alert('حدث خطأ أثناء تدشين الفعالية. يرجى مراجعة البيانات والمحاولة مجدداً.');
       setIsSubmitting(false);
     }
   };
@@ -1476,9 +1506,10 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 </button>
 
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={() => handleSubmit()}
                   disabled={isSubmitting}
-                  className="py-3.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 font-bold text-sm text-white shadow-xl shadow-indigo-600/30 transition active:scale-[0.98] disabled:opacity-50 flex items-center gap-2"
+                  className="py-3.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 font-bold text-sm text-white shadow-xl shadow-indigo-600/30 transition active:scale-[0.98] disabled:opacity-50 flex items-center gap-2 cursor-pointer"
                 >
                   <Sparkles className="w-4 h-4" />
                   <span>
